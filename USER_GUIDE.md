@@ -4,7 +4,7 @@
 
 单帧点云与全局点云 6DOF 剖面配准工具。
 
-当前工具的主入口是 `src/frame_align_6dof.py`，实际功能代码位于 `frame_alignment/`。仓库中的 `src/frame_register_manual.py` 是保留未改动的旧版脚本，不是本文推荐入口；`align_tool/` 也未被当前主入口导入。
+当前工具的主入口是 `src/frame_align_6dof.py`，实际功能代码位于 `frame_alignment/`。
 
 ## 项目解决什么问题
 
@@ -62,9 +62,6 @@
 | 环境 | 状态 | 说明 |
 |---|---|---|
 | Windows 原生环境 | 已确认 | README 使用 PowerShell 命令；本项目当前在 Windows 环境完成了入口和自检验证 |
-| WSL | 需确认 | 当前主入口和 README 没有给出 WSL 支持声明；部署前应检查 `README.md` 与 `src/frame_align_6dof.py`，并验证 Qt/OpenGL 图形显示 |
-| Linux | 需确认 | 仓库没有 Linux 安装、桌面依赖或启动说明；应检查 `requirements.txt` 并在目标发行版验证 PySide6、Open3D 和 PyOpenGL |
-| Docker | 不提供 | 仓库没有 `Dockerfile*` 或容器入口 |
 
 本文所有可复制命令均以 Windows PowerShell 为准。没有给出未经仓库验证的 WSL、Linux 或 Docker 命令。
 
@@ -153,8 +150,7 @@ python -m venv .venv
 
 `README.md` 提供了 `python -m pytest -q`，但 `requirements.txt` 没有声明 `pytest` 及其版本。首次使用者应把 pytest 视为可选测试依赖：
 
-- 是否要纳入正式依赖、采用哪个版本：**需确认**；应查看 `README.md`、`requirements.txt` 和项目维护约定。
-- 不安装 pytest 也可以运行内置 `--self-test` 和基于标准库 `unittest` 的最小检查。
+- 不安装 pytest 可以运行内置 `--self-test` 和基于标准库 `unittest` 的最小检查。
 
 如维护者确认可以安装未锁版本的 pytest，可在 Windows 项目虚拟环境中执行：
 
@@ -176,9 +172,6 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 
 不要在需要人工操作真实 GUI 的会话中依赖 offscreen 模式。
 
-### 模型文件
-
-本项目不使用机器学习模型；仓库没有模型路径配置。
 
 ### 数据目录
 
