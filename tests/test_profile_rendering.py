@@ -55,5 +55,13 @@ class ProfileRenderingTests(unittest.TestCase):
         self.assertLess(low, 3.0)
         self.assertGreater(high, 3.0)
 
+    def test_title_can_change_without_recreating_legend_items(self):
+        from frame_alignment.ui.profile_view import ProfileView
+
+        view = ProfileView("Initial")
+        legend_items = tuple(view.legend.items)
+        view.set_title("Updated profile")
+        self.assertEqual(view.plotItem.titleLabel.text, "Updated profile")
+        self.assertEqual(tuple(view.legend.items), legend_items)
 if __name__ == "__main__":
     unittest.main()

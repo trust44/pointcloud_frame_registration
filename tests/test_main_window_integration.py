@@ -35,8 +35,10 @@ class FakeScene(QtWidgets.QWidget):
     def update_origin(self, center, rotation, axis_length=1.5):
         self.origin = np.asarray(center)
 
-    def update_slice_overlays(self, center, half_length, thickness):
+    def update_slice_overlays(self, geometries, half_length):
         self.overlay_calls += 1
+        self.geometries = tuple(geometries)
+        self.overlay_half_length = half_length
 
 
 class FakeProfile(QtWidgets.QWidget):
@@ -45,6 +47,9 @@ class FakeProfile(QtWidgets.QWidget):
         self.title = title
         self.reference = None
         self.adjusted = None
+
+    def set_title(self, title):
+        self.title = title
 
     def set_profile_data(self, reference_points, adjusted_points, half_length):
         self.reference = np.asarray(reference_points)
@@ -85,6 +90,11 @@ class MainWindowIntegrationTests(unittest.TestCase):
             self.assertEqual(scene.reference_calls, 1)
             self.assertEqual(scene.adjusted_calls, 1)
             self.assertEqual(scene.overlay_calls, 1)
+            self.assertEqual(
+                [geometry.profile_id for geometry in scene.geometries],
+                ["xz", "yz", "diag_plus", "diag_minus"],
+            )
+            np.testing.assert_allclose(scene.geometries[0].height_axis, (0.0, 0.0, 1.0))
             self.assertEqual(len(scene.focus_calls), 1)
             np.testing.assert_allclose(scene.focus_calls[0][0], (10.0, 20.0, 2.0))
             self.assertEqual(scene.focus_calls[0][1], window.roi_radius)
@@ -106,6 +116,58 @@ class MainWindowIntegrationTests(unittest.TestCase):
 
             window.load_current_frame()
             self.assertEqual(len(scene.focus_calls), 2)
+
+    def test_profile_edits_and_additions_refresh_resolved_geometries_without_reload(self):
+        from frame_alignment.core.profiles import PARALLEL_MODE
+        from frame_alignment.ui.main_window import MainWindow
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            frame = self.frame(root)
+
+            class Loader:
+                def load_frame(self, request):
+                    return frame
+
+            scene = FakeScene()
+            window = MainWindow(
+                loader=Loader(),
+                scene=scene,
+                profile_factory=FakeProfile,
+                message_sink=lambda level, text: None,
+            )
+            window.data_panel.yaml_dir_edit.setText(temp)
+            window.load_current_frame()
+            self.assertEqual(scene.overlay_calls, 1)
+
+            window.profile_controls.select_profile("diag_plus")
+            window.profile_controls.angle_edit.setValue(12.0)
+            diagonal = next(
+                geometry for geometry in scene.geometries
+                if geometry.profile_id == "diag_plus")
+            radians = np.deg2rad(12.0)
+            np.testing.assert_allclose(
+                diagonal.along_axis,
+                (np.cos(radians), np.sin(radians), 0.0),
+                atol=1e-12,
+            )
+
+            window.profile_controls.mode_combo.setCurrentIndex(
+                window.profile_controls.mode_combo.findData(PARALLEL_MODE))
+            window.profile_controls.reference_combo.setCurrentText("YZ")
+            window.profile_controls.offset_edit.setValue(-2.5)
+            diagonal = next(
+                geometry for geometry in scene.geometries
+                if geometry.profile_id == "diag_plus")
+            np.testing.assert_allclose(diagonal.center, (12.5, 20.0, 2.0))
+
+            window.profile_controls.add_profile()
+            self.assertEqual(len(scene.geometries), 5)
+            self.assertEqual(scene.geometries[-1].profile_id, "extra_1")
+            self.assertEqual(scene.reference_calls, 1)
+            self.assertTrue(all(profile.reference is not None for profile in window.profiles))
+            window.close()
+
 
     def test_failed_load_keeps_export_enabled_for_previous_frame(self):
         from frame_alignment.ui.main_window import MainWindow

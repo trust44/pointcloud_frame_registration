@@ -8,13 +8,24 @@ from ..app.controller import AlignmentController
 from ..contracts import ExportRequest
 from ..core.point_cloud import read_cloud
 from ..core.pose_model import Delta, PoseModel
-from ..core.profiles import extract_slice
+from ..core.profiles import extract_slice, profile_geometry
 from ..core.registration import constrained_icp
 from ..io.exporter import AlignmentExportState, export_result
 from ..io.frame_loader import FrameLoader
 from .data_io_panel import DataIOPanel
+from .profile_controls import ProfileControls
 from .profile_view import ProfileView
-from .scene_3d import SLICE_SPECS, Scene3DView
+from .scene_3d import Scene3DView
+
+
+def _bounded_profile_half_length(value):
+    try:
+        requested = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 20.0
+    if np.isfinite(requested) and 10.0 <= requested <= 35.0:
+        return requested
+    return 20.0
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -35,7 +46,7 @@ class MainWindow(QtWidgets.QMainWindow):
         interaction = self.config.get("interaction", {})
         self.roi_radius = float(display.get("map_roi_radius_m", 35.0))
         self.display_voxel = float(display.get("display_voxel_m", 0.05))
-        self.slice_half_length = float(display.get("slice_half_length_m", 20.0))
+        self.slice_half_length = _bounded_profile_half_length(display.get("slice_half_length_m", 20.0))
         self.slice_thickness = float(display.get("slice_thickness_m", 0.20))
         self.translation_step = float(interaction.get("translation_step_m", 0.01))
         self.translation_large_step = float(interaction.get("translation_large_step_m", 0.10))
@@ -51,7 +62,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.data_panel = DataIOPanel()
         self.scene = scene or Scene3DView()
-        self.profiles = [profile_factory(spec.name) for spec in SLICE_SPECS]
+        self._profile_factory = profile_factory
+        self.profile_controls = ProfileControls()
+        self.profile_specs = self.profile_controls.profile_specs
+        self._profile_widgets = {
+            spec.profile_id: profile_factory(spec.name) for spec in self.profile_specs
+        }
+        self.profiles = [self._profile_widgets[spec.profile_id] for spec in self.profile_specs]
         self._build_ui()
         self.data_panel.scan_failed.connect(self._on_scan_failed)
         self.data_panel.apply_config(self.config)
@@ -59,6 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.data_panel.export_requested.connect(self.export_current_frame)
         self.controller = AlignmentController(
             loader or FrameLoader(read_cloud), PoseModel, self._on_frame_loaded, self._on_load_error)
+        self.profile_controls.profiles_changed.connect(self._apply_profile_specs)
         if initial_frame is not None:
             original_loader = self.controller.loader
             self.controller.loader = _SingleFrameLoader(initial_frame)
@@ -72,16 +90,9 @@ class MainWindow(QtWidgets.QMainWindow):
         root_layout.setContentsMargins(6, 6, 6, 6)
 
         self.visualization_widget = QtWidgets.QWidget()
-        visualization_layout = QtWidgets.QGridLayout(self.visualization_widget)
-        visualization_layout.setContentsMargins(0, 0, 0, 0)
-        visualization_layout.addWidget(self.scene, 0, 0, 1, 2)
-        for index, profile in enumerate(self.profiles):
-            visualization_layout.addWidget(profile, 1 + index // 2, index % 2)
-        visualization_layout.setColumnStretch(0, 1)
-        visualization_layout.setColumnStretch(1, 1)
-        visualization_layout.setRowStretch(0, 4)
-        visualization_layout.setRowStretch(1, 2)
-        visualization_layout.setRowStretch(2, 2)
+        self.visualization_layout = QtWidgets.QGridLayout(self.visualization_widget)
+        self.visualization_layout.setContentsMargins(0, 0, 0, 0)
+        self._rebuild_profile_layout()
 
         self.pose_panel = self._build_pose_panel()
         self.matrix_panel = self._build_matrix_panel()
@@ -89,6 +100,7 @@ class MainWindow(QtWidgets.QMainWindow):
         sidebar_layout = QtWidgets.QVBoxLayout(self.right_sidebar)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.addWidget(self.pose_panel)
+        sidebar_layout.addWidget(self.profile_controls)
         sidebar_layout.addWidget(self.matrix_panel)
         sidebar_layout.addWidget(self.data_panel)
         sidebar_layout.addStretch(1)
@@ -100,6 +112,62 @@ class MainWindow(QtWidgets.QMainWindow):
         root_layout.addWidget(self.visualization_widget, 1)
         root_layout.addWidget(sidebar_scroll)
         self.setStatusBar(QtWidgets.QStatusBar())
+
+    def _apply_profile_specs(self, specs):
+        specs = tuple(sorted(specs, key=lambda spec: (spec.grid_column, spec.grid_row)))
+        profile_ids = [spec.profile_id for spec in specs]
+        if len(profile_ids) != len(set(profile_ids)):
+            raise ValueError("profile ids must be unique")
+
+        active_ids = set(profile_ids)
+        for profile_id in set(self._profile_widgets) - active_ids:
+            widget = self._profile_widgets.pop(profile_id)
+            self.visualization_layout.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+
+        for spec in specs:
+            widget = self._profile_widgets.get(spec.profile_id)
+            if widget is None:
+                widget = self._profile_factory(spec.name)
+                self._profile_widgets[spec.profile_id] = widget
+            if hasattr(widget, "set_title"):
+                widget.set_title(spec.name)
+
+        self.profile_specs = specs
+        self.profiles = [self._profile_widgets[spec.profile_id] for spec in specs]
+        self._rebuild_profile_layout()
+        if hasattr(self, "controller"):
+            self.refresh_views()
+
+    def _rebuild_profile_layout(self):
+        self.visualization_layout.removeWidget(self.scene)
+        for widget in self._profile_widgets.values():
+            self.visualization_layout.removeWidget(widget)
+
+        self.profile_column_count = 3 if any(
+            spec.grid_column == 2 for spec in self.profile_specs) else 2
+        self.visualization_layout.addWidget(
+            self.scene, 0, 0, 1, self.profile_column_count)
+        for spec in self.profile_specs:
+            self.visualization_layout.addWidget(
+                self._profile_widgets[spec.profile_id],
+                1 + spec.grid_row,
+                spec.grid_column,
+            )
+        for column in range(3):
+            self.visualization_layout.setColumnStretch(
+                column, 1 if column < self.profile_column_count else 0)
+        self.visualization_layout.setRowStretch(0, 4)
+        self.visualization_layout.setRowStretch(1, 2)
+        self.visualization_layout.setRowStretch(2, 2)
+
+    def profile_grid_positions(self):
+        return {
+            spec.profile_id: (spec.grid_row, spec.grid_column)
+            for spec in self.profile_specs
+        }
+
     def _build_pose_panel(self):
         panel = QtWidgets.QGroupBox("6DOF \u63a7\u5236\uff08Pivot: \u521d\u59cb LiDAR \u539f\u70b9 C0\uff09")
         grid = QtWidgets.QGridLayout(panel)
@@ -120,7 +188,7 @@ class MainWindow(QtWidgets.QMainWindow):
         row = len(self.pose_fields)
         grid.addWidget(QtWidgets.QLabel("\u5256\u9762\u534a\u957f (m)"), row, 0)
         self.length_edit = QtWidgets.QDoubleSpinBox()
-        self.length_edit.setRange(0.1, 1000.0)
+        self.length_edit.setRange(10.0, 35.0)
         self.length_edit.setValue(self.slice_half_length)
         self.length_edit.valueChanged.connect(self._set_slice_length)
         grid.addWidget(self.length_edit, row, 1, 1, 3)
@@ -192,14 +260,16 @@ class MainWindow(QtWidgets.QMainWindow):
         adjusted = model.transform_points(self.source_display.points)
         self.scene.set_adjusted(adjusted)
         self.scene.update_origin(model.current_origin, model.corrected_pose[:3, :3])
-        self.scene.update_slice_overlays(model.current_origin, self.slice_half_length, self.slice_thickness)
-        for profile, spec in zip(self.profiles, SLICE_SPECS):
+        geometries = tuple(
+            profile_geometry(spec, model.current_origin, model.corrected_pose[:3, :3])
+            for spec in self.profile_specs
+        )
+        self.scene.update_slice_overlays(geometries, self.slice_half_length)
+        for profile, geometry in zip(self.profiles, geometries):
             reference = extract_slice(
-                self.map_display.points, model.current_origin, spec.angle_deg,
-                self.slice_half_length, self.slice_thickness)
+                self.map_display.points, geometry, self.slice_half_length, self.slice_thickness)
             adjusted_profile = extract_slice(
-                adjusted, model.current_origin, spec.angle_deg,
-                self.slice_half_length, self.slice_thickness)
+                adjusted, geometry, self.slice_half_length, self.slice_thickness)
             profile.set_profile_data(reference, adjusted_profile, self.slice_half_length)
         for name, edit in self.edits.items():
             edit.blockSignals(True)

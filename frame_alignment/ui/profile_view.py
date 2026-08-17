@@ -31,6 +31,9 @@ class ProfileView(pg.PlotWidget):
         self.empty_item.hide()
         self.addItem(self.empty_item)
 
+    def set_title(self, title):
+        self.plotItem.setTitle(str(title))
+
     @staticmethod
     def _xy(points):
         points = np.asarray(points, dtype=np.float64)
