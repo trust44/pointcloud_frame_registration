@@ -2,6 +2,9 @@
 
 启动入口是 `src/frame_align_6dof.py`；原有的 `src/frame_register_manual.py` 保持不变。
 
+## 使用方法
+见`USER_GUIDE.md`
+
 ## 安装与启动
 
 ```powershell
