@@ -1,4 +1,4 @@
-"""Embedded pyqtgraph OpenGL scene with point clouds and slice overlays."""
+﻿"""Embedded pyqtgraph OpenGL scene with point clouds and slice overlays."""
 import numpy as np
 from PySide6.QtGui import QVector3D
 import pyqtgraph.opengl as gl
@@ -77,6 +77,12 @@ class Scene3DView(gl.GLViewWidget):
 
     def set_adjusted(self, points):
         self.adjusted_item.setData(pos=np.asarray(points), color=ADJUSTED_RGBA, size=2.5, pxMode=True)
+
+    def set_reference_colors(self, colors):
+        self.reference_item.setData(color=np.asarray(colors), size=1.5, pxMode=True)
+
+    def set_adjusted_colors(self, colors):
+        self.adjusted_item.setData(color=np.asarray(colors), size=2.5, pxMode=True)
 
     def update_origin(self, center, rotation, axis_length=1.5):
         center = np.asarray(center, dtype=np.float64)

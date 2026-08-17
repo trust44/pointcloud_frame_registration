@@ -7,6 +7,9 @@ def empty_quality():
         "nn_residual_p95_m": None,
         "icp_rmse_m": None,
         "icp_fitness": None,
+        "initial_icp": None,
+        "icp_error": None,
+        "manual_error": None,
     }
 
 
@@ -34,7 +37,19 @@ class AlignmentController:
         return True
 
     def invalidate_quality(self):
-        self.quality = empty_quality()
+        for key in ("nn_residual_median_m", "nn_residual_p95_m", "icp_rmse_m", "icp_fitness"):
+            self.quality[key] = None
+        self.quality["manual_error"] = None
+
+    def record_icp(self, icp_stats, error_stats):
+        if self.quality["initial_icp"] is None:
+            self.quality["initial_icp"] = dict(icp_stats)
+        self.quality["icp_error"] = dict(error_stats)
+        self.quality["manual_error"] = None
+        self.quality.update(dict(icp_stats))
+
+    def record_manual_error(self, error_stats):
+        self.quality["manual_error"] = dict(error_stats)
 
     def refresh_views(self):
         if self.current_frame is not None:
