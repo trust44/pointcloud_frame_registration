@@ -11,7 +11,7 @@ from PySide6 import QtWidgets
 
 from frame_alignment.app.frame_catalog import FrameCatalog
 from frame_alignment.core.point_cloud import read_cloud
-from frame_alignment.core.profiles import extract_slice
+from frame_alignment.core.profiles import default_profile_specs, extract_slice, profile_geometry
 from frame_alignment.ui.profile_view import ProfileView
 from frame_alignment.ui.scene_3d import Scene3DView
 
@@ -57,12 +57,13 @@ class RealSampleRenderingTests(unittest.TestCase):
 
     def test_real_sample_populates_all_profiles_including_xz(self):
         profiles = {}
-        for angle in (0.0, 90.0, 45.0, -45.0):
-            reference = extract_slice(self.map_display.points, self.c0, angle, 20.0, 0.2)
-            adjusted = extract_slice(self.source_display.points, self.c0, angle, 20.0, 0.2)
-            self.assertGreater(len(reference), 0, "reference angle={}".format(angle))
-            self.assertGreater(len(adjusted), 0, "adjusted angle={}".format(angle))
-            profiles[angle] = (reference, adjusted)
+        for spec in default_profile_specs():
+            geometry = profile_geometry(spec, self.c0, POSE[:3, :3])
+            reference = extract_slice(self.map_display.points, geometry, 20.0, 0.2)
+            adjusted = extract_slice(self.source_display.points, geometry, 20.0, 0.2)
+            self.assertGreater(len(reference), 0, "reference profile={}".format(spec.name))
+            self.assertGreater(len(adjusted), 0, "adjusted profile={}".format(spec.name))
+            profiles[spec.angle_deg] = (reference, adjusted)
 
         reference, adjusted = profiles[0.0]
         view = ProfileView("X-Z / 0\N{DEGREE SIGN}")
