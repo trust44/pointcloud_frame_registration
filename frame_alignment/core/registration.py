@@ -40,7 +40,7 @@ def constrained_icp(model, source, target, radius=25.0, voxel=0.08, corresponden
         source_3d, target_3d, correspondence, np.eye(4),
         o3d.pipelines.registration.TransformationEstimationPointToPlane(),
         o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=50))
-    increment = np.asarray(outcome.transformation)
+    increment = np.asarray(outcome.transformation, dtype=np.float64).copy()
     distance, angle = correction_magnitudes_about_point(increment, center)
     if distance > max_translation or angle > max_rotation:
         raise ValueError("Rejected ICP correction ({:.3f} m, {:.3f} deg)".format(distance, angle))

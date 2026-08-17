@@ -17,5 +17,5 @@ display:
 interaction:
   translation_step_m: 0.01
   translation_large_step_m: 0.10
-  rotation_step_deg: 0.05
+  rotation_step_deg: 0.02
   rotation_large_step_deg: 0.50
