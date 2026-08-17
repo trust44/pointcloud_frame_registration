@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from frame_alignment.contracts import FrameData
 from frame_alignment.core.point_cloud import Cloud, read_cloud
 from frame_alignment.core.pose_model import Delta, PoseModel
+from frame_alignment.io.map_anchor import pose_in_map_coordinates
 from frame_alignment.io.pose_parser import parse_tr_velo_to_map, validate_rigid_transform
 
 
@@ -104,6 +105,7 @@ def build_initial_frame(config, initial_pose=None, pose_path=None, cloud_reader=
     if pose is None:
         raise ValueError("Legacy file startup requires --pose or initial_pose.matrix")
     pose = validate_rigid_transform(pose)
+    pose = pose_in_map_coordinates(pose, map_path)
     if resolved_pose_path is None:
         resolved_pose_path = (PROJECT_ROOT / "<inline-initial-pose>").resolve()
 
