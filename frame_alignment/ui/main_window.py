@@ -232,6 +232,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(panel)
         self.matrix_text = QtWidgets.QPlainTextEdit()
         self.matrix_text.setReadOnly(True)
+        self.matrix_text.setMinimumHeight(300)
         layout.addWidget(self.matrix_text)
         return panel
     def _qt_message(self, level, text):
@@ -300,12 +301,20 @@ class MainWindow(QtWidgets.QMainWindow):
             edit.blockSignals(True)
             edit.setValue(getattr(model.delta, name))
             edit.blockSignals(False)
+        quality_lines = []
+        for key, value in self.controller.quality.items():
+            if isinstance(value, dict):
+                quality_lines.append("{}:".format(key))
+                for metric, metric_value in value.items():
+                    shown = "{:.6f}".format(float(metric_value)) if isinstance(metric_value, (int, float)) else metric_value
+                    quality_lines.append("  {}: {}".format(metric, shown))
+            else:
+                quality_lines.append("{}: {}".format(key, value))
         self.matrix_text.setPlainText(
-            "C0 = {}\nC_current = {}\nT_manual_map =\n{}\nT_corrected_map_lidar =\n{}\nquality = {}".format(
+            "C0 = {}\nC_current = {}\nquality:\n{}\nT_manual_map =\n{}\nT_corrected_map_lidar =\n{}".format(
                 np.array2string(model.c0, precision=4), np.array2string(model.current_origin, precision=4),
-                np.array2string(model.transform, precision=6), np.array2string(model.corrected_pose, precision=6),
-                self.controller.quality))
-
+                "\n".join(quality_lines), np.array2string(model.transform, precision=6),
+                np.array2string(model.corrected_pose, precision=6)))
     def _step_for(self, field):
         large = bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ShiftModifier)
         if field.endswith("deg"):
@@ -459,4 +468,6 @@ class _SingleFrameLoader:
 
     def load_frame(self, request):
         return self.frame
+
+
 
