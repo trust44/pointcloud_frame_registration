@@ -89,9 +89,9 @@ class Scene3DView(gl.GLViewWidget):
     def update_slice_overlays(self, geometries, half_length):
         """Synchronize vertical profile outlines with the current profile set."""
         geometries = tuple(geometries)
-        profile_ids = [geometry.profile_id for geometry in geometries]
         if any(not isinstance(geometry, ProfileGeometry) for geometry in geometries):
             raise TypeError("geometries must contain ProfileGeometry values")
+        profile_ids = [geometry.profile_id for geometry in geometries]
         if len(profile_ids) != len(set(profile_ids)):
             raise ValueError("profile ids must be unique")
 
