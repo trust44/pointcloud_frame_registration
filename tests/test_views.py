@@ -13,30 +13,49 @@ class ViewGeometryTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
-    def test_slice_rectangle_vertices_follow_center_length_width_and_angle(self):
+    def test_slice_rectangle_vertices_form_yaw_relative_vertical_plane(self):
+        from scipy.spatial.transform import Rotation
+
+        from frame_alignment.core.profiles import default_profile_specs, profile_geometry
         from frame_alignment.ui.scene_3d import slice_rectangle_vertices
 
-        vertices = slice_rectangle_vertices(np.array((10.0, 20.0, 3.0)), 2.0, 1.0, 0.0)
+        rotation = Rotation.from_euler("z", 90.0, degrees=True).as_matrix()
+        geometry = profile_geometry(default_profile_specs()[0], (10.0, 20.0, 3.0), rotation)
+        vertices = slice_rectangle_vertices(geometry, half_length=2.0, vertical_half_length=1.0)
+
         expected = np.array([
-            [8.0, 19.5, 3.0],
-            [12.0, 19.5, 3.0],
-            [12.0, 20.5, 3.0],
-            [8.0, 20.5, 3.0],
-            [8.0, 19.5, 3.0],
+            [10.0, 18.0, 2.0],
+            [10.0, 22.0, 2.0],
+            [10.0, 22.0, 4.0],
+            [10.0, 18.0, 4.0],
+            [10.0, 18.0, 2.0],
         ])
-        np.testing.assert_allclose(vertices, expected)
+        np.testing.assert_allclose(vertices, expected, atol=1e-12)
 
-        diagonal = slice_rectangle_vertices(np.zeros(3), np.sqrt(2.0), 2.0, 45.0)
-        np.testing.assert_allclose(diagonal[0], (1.0 / np.sqrt(2.0) - 1.0, -1.0 - 1.0 / np.sqrt(2.0), 0.0), atol=1e-12)
+    def test_slice_overlays_add_and_remove_items_by_profile_id(self):
+        from frame_alignment.core.profiles import (
+            default_profile_specs, extra_profile_spec, profile_geometry)
+        from frame_alignment.ui.scene_3d import Scene3DView
 
-    def test_overlay_specs_have_required_names_and_colors(self):
-        from frame_alignment.ui.scene_3d import SLICE_SPECS
+        view = Scene3DView()
+        defaults = default_profile_specs()
+        six_specs = defaults + (extra_profile_spec(0), extra_profile_spec(1))
+        four_geometries = tuple(
+            profile_geometry(spec, np.zeros(3), np.eye(3)) for spec in defaults)
+        six_geometries = tuple(
+            profile_geometry(spec, np.zeros(3), np.eye(3)) for spec in six_specs)
 
-        self.assertEqual([item.name for item in SLICE_SPECS], [
-            "X-Z / 0\u00b0", "Y-Z / 90\u00b0", "Diag +45\u00b0", "Diag -45\u00b0"])
-        self.assertEqual([item.color for item in SLICE_SPECS], [
-            (1.0, 0.0, 0.0, 1.0), (0.0, 1.0, 0.0, 1.0),
-            (0.0, 0.45, 1.0, 1.0), (0.65, 0.2, 0.8, 1.0)])
+        view.update_slice_overlays(four_geometries, half_length=20.0)
+        self.assertEqual(set(view.slice_items), {spec.profile_id for spec in defaults})
+        self.assertEqual(set(view.slice_labels), {spec.profile_id for spec in defaults})
+
+        view.update_slice_overlays(six_geometries, half_length=20.0)
+        self.assertEqual(set(view.slice_items), {spec.profile_id for spec in six_specs})
+        self.assertEqual(set(view.slice_labels), {spec.profile_id for spec in six_specs})
+
+        view.update_slice_overlays(four_geometries, half_length=20.0)
+        self.assertEqual(set(view.slice_items), {spec.profile_id for spec in defaults})
+        self.assertEqual(set(view.slice_labels), {spec.profile_id for spec in defaults})
 
     def test_focus_on_centers_camera_on_high_coordinate_origin(self):
         from frame_alignment.ui.scene_3d import Scene3DView

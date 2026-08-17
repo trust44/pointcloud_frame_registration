@@ -1,42 +1,34 @@
 """Embedded pyqtgraph OpenGL scene with point clouds and slice overlays."""
-from dataclasses import dataclass
-
 import numpy as np
 from PySide6.QtGui import QVector3D
 import pyqtgraph.opengl as gl
+
+from frame_alignment.core.profiles import ProfileGeometry
 
 
 REFERENCE_RGBA = (144 / 255.0, 164 / 255.0, 174 / 255.0, 0.72)
 ADJUSTED_RGBA = (246 / 255.0, 196 / 255.0, 69 / 255.0, 0.96)
 
 
-@dataclass(frozen=True)
-class SliceSpec:
-    angle_deg: float
-    name: str
-    color: tuple
-
-
-SLICE_SPECS = (
-    SliceSpec(0.0, "X-Z / 0\u00b0", (1.0, 0.0, 0.0, 1.0)),
-    SliceSpec(90.0, "Y-Z / 90\u00b0", (0.0, 1.0, 0.0, 1.0)),
-    SliceSpec(45.0, "Diag +45\u00b0", (0.0, 0.45, 1.0, 1.0)),
-    SliceSpec(-45.0, "Diag -45\u00b0", (0.65, 0.2, 0.8, 1.0)),
-)
-
-
-def slice_rectangle_vertices(center, half_length, thickness, angle_deg):
-    center = np.asarray(center, dtype=np.float64)
-    theta = np.deg2rad(float(angle_deg))
-    axis = np.array((np.cos(theta), np.sin(theta), 0.0))
-    normal = np.array((-np.sin(theta), np.cos(theta), 0.0))
-    along = float(half_length) * axis
-    across = float(thickness) * 0.5 * normal
+def slice_rectangle_vertices(geometry, half_length, vertical_half_length=None):
+    """Return a closed vertical plane outline for one resolved profile."""
+    if not isinstance(geometry, ProfileGeometry):
+        raise TypeError("geometry must be a ProfileGeometry")
+    half_length = float(half_length)
+    if vertical_half_length is None:
+        vertical_half_length = half_length
+    vertical_half_length = float(vertical_half_length)
+    if not np.isfinite(half_length) or half_length <= 0.0:
+        raise ValueError("half_length must be positive and finite")
+    if not np.isfinite(vertical_half_length) or vertical_half_length <= 0.0:
+        raise ValueError("vertical_half_length must be positive and finite")
+    along = half_length * geometry.along_axis
+    vertical = vertical_half_length * geometry.height_axis
     corners = np.asarray((
-        center - along - across,
-        center + along - across,
-        center + along + across,
-        center - along + across,
+        geometry.center - along - vertical,
+        geometry.center + along - vertical,
+        geometry.center + along + vertical,
+        geometry.center - along + vertical,
     ))
     return np.vstack((corners, corners[0]))
 
@@ -66,13 +58,6 @@ class Scene3DView(gl.GLViewWidget):
         self.addItem(self.origin_label)
         self.slice_items = {}
         self.slice_labels = {}
-        for spec in SLICE_SPECS:
-            line = gl.GLLinePlotItem(pos=np.zeros((5, 3)), color=spec.color, width=2, antialias=True)
-            label = gl.GLTextItem(pos=(0, 0, 0), text=spec.name, color=tuple(int(v * 255) for v in spec.color))
-            self.slice_items[spec.angle_deg] = line
-            self.slice_labels[spec.angle_deg] = label
-            self.addItem(line)
-            self.addItem(label)
 
     def focus_on(self, center, roi_radius):
         try:
@@ -101,13 +86,37 @@ class Scene3DView(gl.GLViewWidget):
             item.setData(pos=np.vstack((center, center + axis_length * rotation[:, index])))
         self.origin_label.setData(pos=center + np.array((0.2, 0.2, 0.3)), text="LiDAR Origin")
 
-    def update_slice_overlays(self, center, half_length, thickness):
-        center = np.asarray(center, dtype=np.float64)
-        for spec in SLICE_SPECS:
-            vertices = slice_rectangle_vertices(center, half_length, thickness, spec.angle_deg)
-            self.slice_items[spec.angle_deg].setData(pos=vertices, color=spec.color, width=2)
-            theta = np.deg2rad(spec.angle_deg)
-            label_position = center + np.array((np.cos(theta), np.sin(theta), 0.0)) * half_length
-            label_position[2] += 0.25
-            self.slice_labels[spec.angle_deg].setData(pos=label_position, text=spec.name)
+    def update_slice_overlays(self, geometries, half_length):
+        """Synchronize vertical profile outlines with the current profile set."""
+        geometries = tuple(geometries)
+        profile_ids = [geometry.profile_id for geometry in geometries]
+        if any(not isinstance(geometry, ProfileGeometry) for geometry in geometries):
+            raise TypeError("geometries must contain ProfileGeometry values")
+        if len(profile_ids) != len(set(profile_ids)):
+            raise ValueError("profile ids must be unique")
+
+        active_ids = set(profile_ids)
+        for profile_id in set(self.slice_items) - active_ids:
+            self.removeItem(self.slice_items.pop(profile_id))
+            self.removeItem(self.slice_labels.pop(profile_id))
+
+        for geometry in geometries:
+            profile_id = geometry.profile_id
+            color = tuple(geometry.color)
+            if profile_id not in self.slice_items:
+                line = gl.GLLinePlotItem(
+                    pos=np.zeros((5, 3)), color=color, width=2, antialias=True)
+                label = gl.GLTextItem(
+                    pos=(0, 0, 0), text=geometry.name,
+                    color=tuple(int(component * 255) for component in color))
+                self.slice_items[profile_id] = line
+                self.slice_labels[profile_id] = label
+                self.addItem(line)
+                self.addItem(label)
+            vertices = slice_rectangle_vertices(geometry, half_length)
+            self.slice_items[profile_id].setData(pos=vertices, color=color, width=2)
+            label_position = (
+                geometry.center + geometry.along_axis * float(half_length)
+                + geometry.height_axis * 0.25)
+            self.slice_labels[profile_id].setData(pos=label_position, text=geometry.name)
 
