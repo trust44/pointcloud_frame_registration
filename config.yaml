@@ -14,8 +14,24 @@ display:
   slice_half_length_m: 20.0
   slice_thickness_m: 0.20
 
+  clouds:
+    global:
+      mode: uniform
+      color: "#90A4AE"
+      cmap: viridis
+      scalar: z
+      range: auto
+    source:
+      mode: uniform
+      color: "#F6C445"
+      cmap: plasma
 interaction:
   translation_step_m: 0.01
   translation_large_step_m: 0.10
   rotation_step_deg: 0.02
   rotation_large_step_deg: 0.50
+
+error:
+  method: nearest_neighbor
+  evaluation_radius_m: 25.0
+  match_threshold_m: 0.2

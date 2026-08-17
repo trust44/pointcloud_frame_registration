@@ -14,6 +14,45 @@ def residuals(source, target):
             "nn_residual_p95_m": float(np.percentile(distances, 95))}
 
 
+
+def matching_error(source, target, method="nearest_neighbor", threshold=0.2,
+                   target_normals=None):
+    """Compute point-cloud matching statistics without changing either input."""
+    empty = {"median_m": None, "mean_m": None, "rmse_m": None,
+             "p95_m": None, "match_ratio": None}
+    source = np.asarray(source, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    if source.size == 0 or target.size == 0:
+        return empty
+    if source.ndim != 2 or target.ndim != 2 or source.shape[1] != 3 or target.shape[1] != 3:
+        raise ValueError("source and target must be arrays with shape (N, 3)")
+    if method not in {"nearest_neighbor", "symmetric_chamfer", "point_to_plane"}:
+        raise ValueError("unsupported matching error method: {}".format(method))
+    threshold = float(threshold)
+    if threshold < 0:
+        raise ValueError("threshold must be non-negative")
+    target_tree = cKDTree(target)
+    source_distances, source_indices = target_tree.query(source, k=1)
+    distances = source_distances
+    if method == "symmetric_chamfer":
+        reverse_distances = cKDTree(source).query(target, k=1)[0]
+        distances = np.concatenate((source_distances, reverse_distances))
+    elif method == "point_to_plane":
+        if target_normals is None:
+            raise ValueError("target_normals are required for point_to_plane")
+        normals = np.asarray(target_normals, dtype=np.float64)
+        if normals.shape != target.shape:
+            raise ValueError("target_normals must have shape matching target")
+        distances = np.abs(np.sum((source - target[source_indices]) * normals[source_indices], axis=1))
+    distances = np.asarray(distances, dtype=np.float64)
+    return {
+        "median_m": float(np.median(distances)),
+        "mean_m": float(np.mean(distances)),
+        "rmse_m": float(np.sqrt(np.mean(np.square(distances)))),
+        "p95_m": float(np.percentile(distances, 95)),
+        "match_ratio": float(np.mean(distances <= threshold)),
+    }
+
 def correction_magnitudes_about_point(increment, point):
     """Return displacement at ``point`` and rotation angle for an ICP increment."""
     increment = np.asarray(increment, dtype=np.float64)

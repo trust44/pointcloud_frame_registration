@@ -1,4 +1,4 @@
-"""Single-window GUI integrating data selection, 3D scene, profiles, and 6DoF controls."""
+﻿"""Single-window GUI integrating data selection, 3D scene, profiles, and 6DoF controls."""
 import time
 
 import numpy as np
@@ -6,16 +6,18 @@ from PySide6 import QtCore, QtWidgets
 
 from ..app.controller import AlignmentController
 from ..contracts import ExportRequest
-from ..core.point_cloud import read_cloud
+from ..core.point_cloud import Cloud, read_cloud
 from ..core.pose_model import Delta, PoseModel
 from ..core.profiles import extract_slice, profile_geometry
-from ..core.registration import constrained_icp
+from ..core.registration import constrained_icp, matching_error
 from ..io.exporter import AlignmentExportState, export_result
 from ..io.frame_loader import FrameLoader
 from .data_io_panel import DataIOPanel
 from .profile_controls import ProfileControls
 from .profile_view import ProfileView
 from .scene_3d import Scene3DView
+from .cloud_rendering import render_cloud_colors
+from .cloud_render_controls import CloudRenderControls
 
 
 def _bounded_profile_half_length(value):
@@ -44,6 +46,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.config = config or {}
         display = self.config.get("display", {})
         interaction = self.config.get("interaction", {})
+        self.cloud_render_settings = display.get("clouds", {}) if isinstance(display.get("clouds", {}), dict) else {}
+        error = self.config.get("error", {})
         self.roi_radius = float(display.get("map_roi_radius_m", 35.0))
         self.display_voxel = float(display.get("display_voxel_m", 0.05))
         self.slice_half_length = _bounded_profile_half_length(display.get("slice_half_length_m", 20.0))
@@ -52,6 +56,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.translation_large_step = float(interaction.get("translation_large_step_m", 0.10))
         self.rotation_step = float(interaction.get("rotation_step_deg", 0.05))
         self.rotation_large_step = float(interaction.get("rotation_large_step_deg", 0.50))
+        self.error_method = str(error.get("method", "nearest_neighbor"))
+        self.error_radius = float(error.get("evaluation_radius_m", 25.0))
+        self.error_threshold = float(error.get("match_threshold_m", 0.2))
         self._message_sink = message_sink or self._qt_message
         self._load_started = None
         self.map_display = None
@@ -64,6 +71,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.scene = scene or Scene3DView()
         self._profile_factory = profile_factory
         self.profile_controls = ProfileControls()
+        self.cloud_render_controls = CloudRenderControls(self.cloud_render_settings)
         self.profile_specs = self.profile_controls.profile_specs
         self._profile_widgets = {
             spec.profile_id: profile_factory(spec.name) for spec in self.profile_specs
@@ -77,6 +85,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.controller = AlignmentController(
             loader or FrameLoader(read_cloud), PoseModel, self._on_frame_loaded, self._on_load_error)
         self.profile_controls.profiles_changed.connect(self._apply_profile_specs)
+        self.cloud_render_controls.changed.connect(self._on_cloud_render_changed)
         if initial_frame is not None:
             original_loader = self.controller.loader
             self.controller.loader = _SingleFrameLoader(initial_frame)
@@ -101,6 +110,7 @@ class MainWindow(QtWidgets.QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.addWidget(self.pose_panel)
         sidebar_layout.addWidget(self.profile_controls)
+        sidebar_layout.addWidget(self.cloud_render_controls)
         sidebar_layout.addWidget(self.matrix_panel)
         sidebar_layout.addWidget(self.data_panel)
         sidebar_layout.addStretch(1)
@@ -112,6 +122,14 @@ class MainWindow(QtWidgets.QMainWindow):
         root_layout.addWidget(self.visualization_widget, 1)
         root_layout.addWidget(sidebar_scroll)
         self.setStatusBar(QtWidgets.QStatusBar())
+
+    def _on_cloud_render_changed(self, layer, settings):
+        self.cloud_render_settings[layer] = dict(settings)
+        if self.map_display is not None and hasattr(self.scene, "set_reference_colors"):
+            self.scene.set_reference_colors(render_cloud_colors(self.map_display.points, self.map_display.colors, self.cloud_render_settings.get("global", {}), self.controller.pose_model.current_origin))
+        if self.source_display is not None and hasattr(self.scene, "set_adjusted_colors"):
+            adjusted = self.controller.pose_model.transform_points(self.source_display.points)
+            self.scene.set_adjusted_colors(render_cloud_colors(adjusted, self.source_display.colors, self.cloud_render_settings.get("source", {}), self.controller.pose_model.current_origin))
 
     def _apply_profile_specs(self, specs):
         specs = tuple(sorted(specs, key=lambda spec: (spec.grid_column, spec.grid_row)))
@@ -201,7 +219,8 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.addWidget(self.thickness_edit, row + 1, 1, 1, 3)
         actions = QtWidgets.QHBoxLayout()
         for title, callback in (("\u91cd\u7f6e (R)", self.reset), ("\u64a4\u9500", self.undo),
-                                ("\u91cd\u505a", self.redo), ("ICP", self.icp)):
+                                ("\u91cd\u505a", self.redo), ("ICP", self.icp),
+                                ("\u8ba1\u7b97\u8bef\u5dee", self.compute_error)):
             button = QtWidgets.QPushButton(title)
             button.clicked.connect(callback)
             actions.addWidget(button)
@@ -209,7 +228,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return panel
 
     def _build_matrix_panel(self):
-        panel = QtWidgets.QGroupBox("姿态矩阵")
+        panel = QtWidgets.QGroupBox("矩阵")
         layout = QtWidgets.QVBoxLayout(panel)
         self.matrix_text = QtWidgets.QPlainTextEdit()
         self.matrix_text.setReadOnly(True)
@@ -241,6 +260,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.map_display = frame.global_map.roi(model.c0, self.roi_radius).voxel(self.display_voxel)
         self.source_display = frame.source_cloud.voxel(self.display_voxel)
         self.scene.set_reference(self.map_display.points)
+        if hasattr(self.scene, "set_reference_colors"):
+            self.scene.set_reference_colors(render_cloud_colors(
+                self.map_display.points, self.map_display.colors, self.cloud_render_settings.get("global", {"mode": "uniform", "color": "#90A4AE"}), model.current_origin))
         if len(self.map_display.points) > 0:
             self.scene.focus_on(model.c0, self.roi_radius)
         self.data_panel.frame_id_edit.setText(frame.frame_id)
@@ -259,6 +281,9 @@ class MainWindow(QtWidgets.QMainWindow):
         model = self.controller.pose_model
         adjusted = model.transform_points(self.source_display.points)
         self.scene.set_adjusted(adjusted)
+        if hasattr(self.scene, "set_adjusted_colors"):
+            self.scene.set_adjusted_colors(render_cloud_colors(
+                adjusted, self.source_display.colors, self.cloud_render_settings.get("source", {"mode": "uniform", "color": "#F6C445"}), model.current_origin))
         self.scene.update_origin(model.current_origin, model.corrected_pose[:3, :3])
         geometries = tuple(
             profile_geometry(spec, model.current_origin, model.corrected_pose[:3, :3])
@@ -331,10 +356,40 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.controller.current_frame is None:
             return
         try:
-            self.controller.quality.update(constrained_icp(
+            icp_stats = constrained_icp(
                 self.controller.pose_model, self.controller.current_frame.source_cloud,
-                self.controller.current_frame.global_map))
+                self.controller.current_frame.global_map)
+            self.controller.record_icp(icp_stats, self._matching_error_for_current_pose())
             self.refresh_views()
+        except Exception as exc:
+            self._message_sink("warning", str(exc))
+
+    def _matching_error_for_current_pose(self):
+        frame = self.controller.current_frame
+        model = self.controller.pose_model
+        source = Cloud(model.transform_points(frame.source_cloud.points)).roi(
+            model.current_origin, self.error_radius)
+        target = frame.global_map.roi(model.current_origin, self.error_radius)
+        target_normals = None
+        if self.error_method == "point_to_plane":
+            import open3d as o3d
+            target_cloud = o3d.geometry.PointCloud(
+                o3d.utility.Vector3dVector(target.points.copy()))
+            target_cloud.estimate_normals(
+                o3d.geometry.KDTreeSearchParamHybrid(radius=0.24, max_nn=30))
+            target_normals = np.asarray(target_cloud.normals).copy()
+        return matching_error(
+            source.points, target.points, method=self.error_method,
+            threshold=self.error_threshold, target_normals=target_normals)
+
+    def compute_error(self):
+        if self.controller.current_frame is None:
+            return
+        try:
+            stats = self._matching_error_for_current_pose()
+            self.controller.record_manual_error(stats)
+            self.refresh_views()
+            self._message_sink("info", "\u8bef\u5dee\u8ba1\u7b97\u5b8c\u6210")
         except Exception as exc:
             self._message_sink("warning", str(exc))
 
@@ -404,3 +459,4 @@ class _SingleFrameLoader:
 
     def load_frame(self, request):
         return self.frame
+
