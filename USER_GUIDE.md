@@ -92,7 +92,7 @@
 ### 1. 进入项目根目录
 
 ```powershell
-cd D:\0_code\frame_register_manual
+cd ./pointcloud_frame_registration
 ```
 
 ### 2. 确认 Python 可用
