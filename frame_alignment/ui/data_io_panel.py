@@ -1,4 +1,4 @@
-"""Editable, collapsible data and output selection panel."""
+﻿"""Editable, collapsible data and output selection panel."""
 from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
@@ -25,11 +25,11 @@ class DataIOPanel(QtWidgets.QGroupBox):
         self.yaml_dir_edit = QtWidgets.QLineEdit()
         self.export_pcd_check = QtWidgets.QCheckBox("\u5bfc\u51fa\u8c03\u6574\u540e PCD")
         self.pcd_dir_edit = QtWidgets.QLineEdit()
-        self.previous_button = QtWidgets.QPushButton('上一帧')
-        self.next_button = QtWidgets.QPushButton('下一帧')
-        self.scan_button = QtWidgets.QPushButton('刷新帧列表')
-        self.annotation_status_label = QtWidgets.QLabel('未标注')
-        self.annotation_count_label = QtWidgets.QLabel('0/0（已标注/总量）')
+        self.previous_button = QtWidgets.QPushButton("上一帧")
+        self.next_button = QtWidgets.QPushButton("下一帧")
+        self.scan_button = QtWidgets.QPushButton("刷新帧列表")
+        self.annotation_status_label = QtWidgets.QLabel("未标注")
+        self.annotation_count_label = QtWidgets.QLabel("标注量：0/0")
         self.load_button = QtWidgets.QPushButton("\u52a0\u8f7d\u5f53\u524d\u5e27")
         self.export_button = QtWidgets.QPushButton("\u5bfc\u51fa\u5f53\u524d\u5e27")
         self.setCheckable(True)
@@ -104,7 +104,7 @@ class DataIOPanel(QtWidgets.QGroupBox):
 
     def _browse_frame_directory(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "选择目录", self.frame_dir_edit.text())
+            self, "閫夋嫨鐩綍", self.frame_dir_edit.text())
         if path:
             self.frame_dir_edit.setText(path)
             self.scan_frames()
@@ -135,13 +135,13 @@ class DataIOPanel(QtWidgets.QGroupBox):
         is_annotated = (
             bool(frame_id) and self._is_directory(yaml_directory)
             and (Path(yaml_directory).expanduser() / (frame_id + ".yaml")).is_file())
-        if is_annotated:
-            self.annotation_status_label.setText("已标注")
-        else:
-            self.annotation_status_label.setText("未标注")
-        self.annotation_count_label.setText("{}/{}（已标注/总量）".format(
+        position = 0
+        if frame_id in self.catalog.frame_ids:
+            position = self.catalog.frame_ids.index(frame_id) + 1
+        status = "已标注" if is_annotated else "未标注"
+        self.annotation_status_label.setText("{} {}/{}".format(status, position, self.catalog.total_count))
+        self.annotation_count_label.setText("标注量：{}/{}".format(
             self.catalog.annotated_count, self.catalog.total_count))
-
     def _select_previous_frame(self):
         frame_id = self.catalog.previous(self.frame_combo.currentText())
         if frame_id is not None:
@@ -196,3 +196,4 @@ class DataIOPanel(QtWidgets.QGroupBox):
         self.pcd_dir_edit.setText(str(config.get("output_path_pcd", "")))
         if self._is_directory(self.frame_dir_edit.text()):
             self.scan_frames()
+

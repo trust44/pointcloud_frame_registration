@@ -459,6 +459,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if key == "G":
             self.export_current_frame()
             return
+        if key == "C":
+            self.compute_error()
+            return
         super().keyPressEvent(event)
 
 
@@ -468,6 +471,7 @@ class _SingleFrameLoader:
 
     def load_frame(self, request):
         return self.frame
+
 
 
 

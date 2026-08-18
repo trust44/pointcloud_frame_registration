@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -66,13 +66,13 @@ class EndToEndWorkflowTests(unittest.TestCase):
             panel.frame_id_edit.setText("000123.pcd")
 
             self.assertTrue(window.load_current_frame())
-            self.assertEqual(panel.annotation_status_label.text(), "未标注")
-            self.assertEqual(panel.annotation_count_label.text(), "0/2（已标注/总量）")
+            self.assertEqual(panel.annotation_status_label.text(), "已标注 1/2")
+            self.assertEqual(panel.annotation_count_label.text(), "标注量：0/2")
             window.nudge("dx_m", 1)
             outcome = window.export_current_frame()
             self.assertEqual(outcome.yaml_path, output_dir / "000123.yaml")
-            self.assertEqual(panel.annotation_status_label.text(), "已标注")
-            self.assertEqual(panel.annotation_count_label.text(), "1/2（已标注/总量）")
+            self.assertEqual(panel.annotation_status_label.text(), "已标注 1/2")
+            self.assertEqual(panel.annotation_count_label.text(), "标注量：1/2")
             exported = yaml.safe_load(outcome.yaml_path.read_text(encoding="utf-8"))
             self.assertAlmostEqual(exported["manual_delta_about_lidar_origin"]["dx_m"], 0.01)
             self.assertEqual(exported["input"]["frame_cloud_map_path"], str((frame_dir / "000123.pcd").resolve()))
@@ -87,3 +87,4 @@ class EndToEndWorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
