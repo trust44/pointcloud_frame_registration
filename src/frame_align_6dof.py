@@ -28,6 +28,8 @@ _CONFIG_PATH_KEYS = (
     "global_map_path",
     "frame_cloud_map_path",
     "initial_pose_path",
+    "registered_cloud_path",
+    "registered_pose_path",
     "output_path_yaml",
     "output_path_pcd",
 )

@@ -64,11 +64,21 @@ def correction_magnitudes_about_point(increment, point):
     return distance, angle
 
 
+def current_pose_source(model, source):
+    """Return the source cloud after all manual adjustments currently in ``model``.
+
+    Input frame clouds are already in map coordinates.  ICP therefore refines the
+    displayed/manual result, rather than applying an initial-pose transform again.
+    """
+    return Cloud(model.transform_points(source.points), source.colors)
+
+
 def constrained_icp(model, source, target, radius=25.0, voxel=0.08, correspondence=0.35,
-                    max_translation=0.5, max_rotation=3.0):
+                     max_translation=0.5, max_rotation=3.0):
     import open3d as o3d
     center = model.current_origin
-    source_roi = Cloud(model.transform_points(source.points), source.colors).roi(center, radius).voxel(voxel)
+    current_transform = model.transform.copy()
+    source_roi = current_pose_source(model, source).roi(center, radius).voxel(voxel)
     target_roi = target.roi(center, radius).voxel(voxel)
     if len(source_roi.points) < 10 or len(target_roi.points) < 10:
         raise ValueError("ICP ROI requires at least 10 points in each cloud")
@@ -83,7 +93,9 @@ def constrained_icp(model, source, target, radius=25.0, voxel=0.08, corresponden
     distance, angle = correction_magnitudes_about_point(increment, center)
     if distance > max_translation or angle > max_rotation:
         raise ValueError("Rejected ICP correction ({:.3f} m, {:.3f} deg)".format(distance, angle))
-    model.set_transform(increment @ model.transform)
+    # ``increment`` maps the manually adjusted source into the target.  Keep the
+    # complete accumulated transform so an ICP run never discards manual work.
+    model.set_transform(increment @ current_transform)
     stats = residuals(model.transform_points(source.points), target.roi(model.current_origin, radius).points)
     stats.update({"icp_rmse_m": float(outcome.inlier_rmse), "icp_fitness": float(outcome.fitness)})
     return stats

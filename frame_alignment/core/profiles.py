@@ -39,8 +39,10 @@ class ProfileGeometry:
 _DEFAULT_PROFILE_SPECS = (
     ProfileSpec("xz", "X-Z / 0\u00b0", (1.0, 0.0, 0.0, 1.0), 0, 0, 0.0, False, False),
     ProfileSpec("yz", "Y-Z / 90\u00b0", (0.0, 1.0, 0.0, 1.0), 1, 0, 90.0, False, False),
-    ProfileSpec("diag_plus", "Diag +45\u00b0", (0.0, 0.45, 1.0, 1.0), 0, 1, 45.0, True, False),
-    ProfileSpec("diag_minus", "Diag -45\u00b0", (0.65, 0.2, 0.8, 1.0), 1, 1, -45.0, True, False),
+    ProfileSpec("xz_offset", "X-Z parallel / +10 m", (0.0, 0.45, 1.0, 1.0),
+                0, 1, 0.0, True, False, PARALLEL_MODE, REFERENCE_XZ, 10.0),
+    ProfileSpec("yz_offset", "Y-Z parallel / +10 m", (0.65, 0.2, 0.8, 1.0),
+                1, 1, 90.0, True, False, PARALLEL_MODE, REFERENCE_YZ, 10.0),
 )
 
 
@@ -57,12 +59,12 @@ def extra_profile_spec(slot):
         raise ValueError("extra profile slot must be 0 or 1") from exc
     if slot == 0:
         return ProfileSpec(
-            "extra_1", "Custom 1 / +90\u00b0", (1.0, 0.55, 0.0, 1.0),
-            0, 2, 90.0, True, True)
+            "extra_1", "Angle / +30\u00b0", (1.0, 0.55, 0.0, 1.0),
+            0, 2, 30.0, True, True)
     if slot == 1:
         return ProfileSpec(
-            "extra_2", "Custom 2 / -90\u00b0", (0.0, 0.8, 0.8, 1.0),
-            1, 2, -90.0, True, True)
+            "extra_2", "Angle / -60\u00b0", (0.0, 0.8, 0.8, 1.0),
+            1, 2, -60.0, True, True)
     raise ValueError("extra profile slot must be 0 or 1")
 
 

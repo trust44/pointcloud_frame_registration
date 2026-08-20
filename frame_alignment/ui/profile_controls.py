@@ -18,9 +18,11 @@ class ProfileControls(QtWidgets.QGroupBox):
 
     profiles_changed = QtCore.Signal(object)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, include_extra_profiles=False):
         super().__init__("剖面设置", parent)
         self._specs = list(default_profile_specs())
+        if include_extra_profiles:
+            self._specs.extend((extra_profile_spec(0), extra_profile_spec(1)))
 
         self.profile_selector = QtWidgets.QComboBox()
         self.mode_combo = QtWidgets.QComboBox()

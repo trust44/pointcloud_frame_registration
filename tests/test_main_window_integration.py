@@ -92,7 +92,7 @@ class MainWindowIntegrationTests(unittest.TestCase):
             self.assertEqual(scene.overlay_calls, 1)
             self.assertEqual(
                 [geometry.profile_id for geometry in scene.geometries],
-                ["xz", "yz", "diag_plus", "diag_minus"],
+                ["xz", "yz", "xz_offset", "yz_offset", "extra_1", "extra_2"],
             )
             np.testing.assert_allclose(scene.geometries[0].height_axis, (0.0, 0.0, 1.0))
             self.assertEqual(len(scene.focus_calls), 1)
@@ -118,7 +118,7 @@ class MainWindowIntegrationTests(unittest.TestCase):
             self.assertEqual(len(scene.focus_calls), 2)
 
     def test_profile_edits_and_additions_refresh_resolved_geometries_without_reload(self):
-        from frame_alignment.core.profiles import PARALLEL_MODE
+        from frame_alignment.core.profiles import ANGLE_MODE, PARALLEL_MODE
         from frame_alignment.ui.main_window import MainWindow
 
         with tempfile.TemporaryDirectory() as temp:
@@ -140,11 +140,13 @@ class MainWindowIntegrationTests(unittest.TestCase):
             window.load_current_frame()
             self.assertEqual(scene.overlay_calls, 1)
 
-            window.profile_controls.select_profile("diag_plus")
+            window.profile_controls.select_profile("xz_offset")
+            window.profile_controls.mode_combo.setCurrentIndex(
+                window.profile_controls.mode_combo.findData(ANGLE_MODE))
             window.profile_controls.angle_edit.setValue(12.0)
             diagonal = next(
                 geometry for geometry in scene.geometries
-                if geometry.profile_id == "diag_plus")
+                if geometry.profile_id == "xz_offset")
             radians = np.deg2rad(12.0)
             np.testing.assert_allclose(
                 diagonal.along_axis,
@@ -158,12 +160,13 @@ class MainWindowIntegrationTests(unittest.TestCase):
             window.profile_controls.offset_edit.setValue(-2.5)
             diagonal = next(
                 geometry for geometry in scene.geometries
-                if geometry.profile_id == "diag_plus")
+                if geometry.profile_id == "xz_offset")
             np.testing.assert_allclose(diagonal.center, (12.5, 20.0, 2.0))
 
-            window.profile_controls.add_profile()
+            window.profile_controls.select_profile("extra_1")
+            self.assertTrue(window.profile_controls.delete_selected_profile())
             self.assertEqual(len(scene.geometries), 5)
-            self.assertEqual(scene.geometries[-1].profile_id, "extra_1")
+            self.assertNotIn("extra_1", [item.profile_id for item in scene.geometries])
             self.assertEqual(scene.reference_calls, 1)
             self.assertTrue(all(profile.reference is not None for profile in window.profiles))
             window.close()

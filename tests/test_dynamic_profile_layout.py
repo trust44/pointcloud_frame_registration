@@ -58,20 +58,22 @@ class DynamicProfileLayoutTests(unittest.TestCase):
     def test_default_layout_and_half_length_bounds(self):
         window = self.make_window()
 
-        self.assertEqual(len(window.profiles), 4)
+        self.assertEqual(len(window.profiles), 6)
         self.assertEqual(window.length_edit.minimum(), 10.0)
         self.assertEqual(window.length_edit.maximum(), 35.0)
         self.assertEqual(window.length_edit.value(), 20.0)
         self.assertEqual(window.profile_grid_positions(), {
             "xz": (0, 0),
             "yz": (1, 0),
-            "diag_plus": (0, 1),
-            "diag_minus": (1, 1),
+            "xz_offset": (0, 1),
+            "yz_offset": (1, 1),
+            "extra_1": (0, 2),
+            "extra_2": (1, 2),
         })
-        self.assertEqual(window.profile_column_count, 2)
+        self.assertEqual(window.profile_column_count, 3)
         scene_position = window.visualization_layout.getItemPosition(
             window.visualization_layout.indexOf(window.scene))
-        self.assertEqual(scene_position, (0, 0, 1, 2))
+        self.assertEqual(scene_position, (0, 0, 1, 3))
         for spec in window.profile_specs:
             position = window.visualization_layout.getItemPosition(
                 window.visualization_layout.indexOf(window._profile_widgets[spec.profile_id]))
@@ -87,16 +89,14 @@ class DynamicProfileLayoutTests(unittest.TestCase):
                 self.assertEqual(window.length_edit.value(), 20.0)
                 window.close()
 
-    def test_extra_profiles_expand_to_three_columns_and_delete_back_to_two(self):
+    def test_default_extra_profiles_can_be_deleted_and_readded(self):
         window = self.make_window()
-        window.profile_controls.add_profile()
         self.assertEqual(window.profile_grid_positions()["extra_1"], (0, 2))
         self.assertEqual(window.profile_column_count, 3)
         scene_position = window.visualization_layout.getItemPosition(
             window.visualization_layout.indexOf(window.scene))
         self.assertEqual(scene_position, (0, 0, 1, 3))
 
-        window.profile_controls.add_profile()
         self.assertEqual(window.profile_grid_positions()["extra_2"], (1, 2))
         self.assertEqual(len(window.profiles), 6)
 
@@ -106,18 +106,19 @@ class DynamicProfileLayoutTests(unittest.TestCase):
         window.profile_controls.delete_selected_profile()
         self.assertEqual(len(window.profiles), 4)
         self.assertEqual(window.profile_column_count, 2)
+        window.profile_controls.add_profile()
+        self.assertEqual(window.profile_grid_positions()["extra_1"], (0, 2))
         window.close()
 
     def test_profile_state_is_reset_for_each_new_window(self):
         first = self.make_window()
-        first.profile_controls.add_profile()
-        first.profile_controls.select_profile("diag_plus")
+        first.profile_controls.select_profile("extra_1")
         first.profile_controls.angle_edit.setValue(12.0)
 
         second = self.make_window()
-        self.assertEqual(len(second.profile_specs), 4)
-        diagonal = next(spec for spec in second.profile_specs if spec.profile_id == "diag_plus")
-        self.assertEqual(diagonal.angle_deg, 45.0)
+        self.assertEqual(len(second.profile_specs), 6)
+        diagonal = next(spec for spec in second.profile_specs if spec.profile_id == "extra_1")
+        self.assertEqual(diagonal.angle_deg, 30.0)
         first.close()
         second.close()
 
