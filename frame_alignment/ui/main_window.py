@@ -507,7 +507,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if key == "V":
             self.icp()
             return
-        if key == "L":
+        if key == "Z":
             self.load_current_frame()
             return
         super().keyPressEvent(event)

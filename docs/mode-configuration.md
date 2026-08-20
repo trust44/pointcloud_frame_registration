@@ -45,7 +45,7 @@ Both modes start with a 2x3 grid: fixed XZ/YZ views; editable XZ/YZ parallel
 views at `+10 m`; and editable `+30 deg`/`-60 deg` views.  The final two are
 the existing optional profiles, so either may be deleted and re-added.
 
-`L` loads the current frame. `Left`/`Right` select the previous/next frame and
+`Z` loads the current frame. `Left`/`Right` select the previous/next frame and
 `Shift+Left`/`Shift+Right` move by ten frames. Review mode loads the selected
 frame immediately; register mode keeps explicit loading. `V` runs ICP only
 when manual adjustment is enabled in register mode.
