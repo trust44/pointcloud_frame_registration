@@ -68,6 +68,14 @@ class FrameCatalog:
         index = self._frame_ids.index(frame_id)
         return self._frame_ids[min(len(self._frame_ids) - 1, index + 1)]
 
+    def offset(self, frame_id: str, amount: int) -> Optional[str]:
+        """Return the frame ``amount`` places away, clamped at either end."""
+        if not self._frame_ids or frame_id not in self._frame_ids:
+            return None
+        index = self._frame_ids.index(frame_id)
+        destination = max(0, min(len(self._frame_ids) - 1, index + int(amount)))
+        return self._frame_ids[destination]
+
     @property
     def frame_ids(self) -> Tuple[str, ...]:
         return self._frame_ids

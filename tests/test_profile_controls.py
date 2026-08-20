@@ -33,7 +33,7 @@ class ProfileControlsTests(unittest.TestCase):
         from frame_alignment.ui.profile_controls import ProfileControls
 
         controls = ProfileControls()
-        controls.select_profile("diag_plus")
+        controls.select_profile("xz_offset")
         self.assertFalse(controls.delete_button.isEnabled())
 
         controls.add_profile()
@@ -54,10 +54,10 @@ class ProfileControlsTests(unittest.TestCase):
         self.assertFalse(controls.reference_combo.isEnabled())
         self.assertFalse(controls.offset_edit.isEnabled())
 
-        controls.select_profile("diag_plus")
+        controls.select_profile("xz_offset")
         self.assertTrue(controls.mode_combo.isEnabled())
-        self.assertTrue(controls.angle_edit.isEnabled())
-        self.assertFalse(controls.reference_combo.isEnabled())
+        self.assertFalse(controls.angle_edit.isEnabled())
+        self.assertTrue(controls.reference_combo.isEnabled())
 
     def test_diagonal_can_switch_to_parallel_signed_offset(self):
         from frame_alignment.ui.profile_controls import ProfileControls
@@ -65,12 +65,12 @@ class ProfileControlsTests(unittest.TestCase):
         controls = ProfileControls()
         snapshots = []
         controls.profiles_changed.connect(snapshots.append)
-        controls.select_profile("diag_plus")
+        controls.select_profile("xz_offset")
         controls.mode_combo.setCurrentIndex(controls.mode_combo.findData(PARALLEL_MODE))
         controls.reference_combo.setCurrentText("YZ")
         controls.offset_edit.setValue(-2.5)
 
-        spec = next(spec for spec in controls.profile_specs if spec.profile_id == "diag_plus")
+        spec = next(spec for spec in controls.profile_specs if spec.profile_id == "xz_offset")
         self.assertEqual((spec.mode, spec.reference, spec.offset_m), (PARALLEL_MODE, "YZ", -2.5))
         self.assertFalse(controls.angle_edit.isEnabled())
         self.assertTrue(controls.reference_combo.isEnabled())
@@ -82,12 +82,12 @@ class ProfileControlsTests(unittest.TestCase):
         from frame_alignment.ui.profile_controls import ProfileControls
 
         controls = ProfileControls()
-        controls.select_profile("diag_minus")
+        controls.select_profile("yz_offset")
         self.assertEqual((controls.angle_edit.minimum(), controls.angle_edit.maximum()), (-180.0, 180.0))
         controls.mode_combo.setCurrentIndex(controls.mode_combo.findData(ANGLE_MODE))
         controls.angle_edit.setValue(30.0)
 
-        spec = next(spec for spec in controls.profile_specs if spec.profile_id == "diag_minus")
+        spec = next(spec for spec in controls.profile_specs if spec.profile_id == "yz_offset")
         self.assertEqual(spec.angle_deg, 30.0)
 
 

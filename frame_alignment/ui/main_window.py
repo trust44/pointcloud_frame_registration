@@ -2,7 +2,7 @@
 import time
 
 import numpy as np
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from ..app.controller import AlignmentController
 from ..contracts import ExportRequest
@@ -11,7 +11,7 @@ from ..core.pose_model import Delta, PoseModel
 from ..core.profiles import extract_slice, profile_geometry
 from ..core.registration import constrained_icp, matching_error
 from ..io.exporter import AlignmentExportState, export_result
-from ..io.frame_loader import FrameLoader
+from ..io.frame_loader import FrameLoader, ReviewFrameLoader
 from .data_io_panel import DataIOPanel
 from .profile_controls import ProfileControls
 from .profile_view import ProfileView
@@ -41,11 +41,18 @@ class MainWindow(QtWidgets.QMainWindow):
     )
 
     def __init__(self, config=None, loader=None, scene=None, profile_factory=ProfileView,
-                 message_sink=None, initial_frame=None, parent=None):
+                  message_sink=None, initial_frame=None, parent=None):
         super().__init__(parent)
         self.config = config or {}
+        self.mode = str(self.config.get("mode", "register")).strip().lower()
+        if self.mode not in {"register", "review"}:
+            raise ValueError("mode must be 'register' or 'review'")
         display = self.config.get("display", {})
         interaction = self.config.get("interaction", {})
+        self.allow_manual_adjustment = (
+            self.mode == "register"
+            and bool(interaction.get("allow_manual_adjustment", True))
+        )
         self.cloud_render_settings = display.get("clouds", {}) if isinstance(display.get("clouds", {}), dict) else {}
         error = self.config.get("error", {})
         self.roi_radius = float(display.get("map_roi_radius_m", 35.0))
@@ -64,13 +71,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.map_display = None
         self.source_display = None
         self.edits = {}
-        self.setWindowTitle("6DoF \u5355\u5e27\u70b9\u4e91 / \u5168\u5c40\u5730\u56fe\u5256\u9762\u914d\u51c6")
+        self.setWindowTitle(
+            "6DoF \u5355\u5e27\u70b9\u4e91 / \u5168\u5c40\u5730\u56fe\u5256\u9762\u914d\u51c6"
+            if self.mode == "register" else "\u5df2\u914d\u51c6\u70b9\u4e91\u5ba1\u6838")
         self.resize(1600, 980)
 
-        self.data_panel = DataIOPanel()
+        self.data_panel = DataIOPanel(mode=self.mode)
         self.scene = scene or Scene3DView()
         self._profile_factory = profile_factory
-        self.profile_controls = ProfileControls()
+        self.profile_controls = ProfileControls(include_extra_profiles=True)
         self.cloud_render_controls = CloudRenderControls(self.cloud_render_settings)
         self.profile_specs = self.profile_controls.profile_specs
         self._profile_widgets = {
@@ -82,10 +91,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.data_panel.apply_config(self.config)
         self.data_panel.load_requested.connect(self.load_current_frame)
         self.data_panel.export_requested.connect(self.export_current_frame)
+        default_loader = ReviewFrameLoader(read_cloud) if self.mode == "review" else FrameLoader(read_cloud)
         self.controller = AlignmentController(
-            loader or FrameLoader(read_cloud), PoseModel, self._on_frame_loaded, self._on_load_error)
+            loader or default_loader, PoseModel, self._on_frame_loaded, self._on_load_error)
         self.profile_controls.profiles_changed.connect(self._apply_profile_specs)
         self.cloud_render_controls.changed.connect(self._on_cloud_render_changed)
+        self._install_navigation_shortcuts()
+        self._set_manual_controls_enabled()
         if initial_frame is not None:
             original_loader = self.controller.loader
             self.controller.loader = _SingleFrameLoader(initial_frame)
@@ -189,6 +201,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_pose_panel(self):
         panel = QtWidgets.QGroupBox("6DOF \u63a7\u5236\uff08Pivot: \u521d\u59cb LiDAR \u539f\u70b9 C0\uff09")
         grid = QtWidgets.QGridLayout(panel)
+        self._manual_widgets = []
         for row, (field, title, negative, positive) in enumerate(self.pose_fields):
             grid.addWidget(QtWidgets.QLabel(title), row, 0)
             minus = QtWidgets.QPushButton("\u2212 " + negative)
@@ -203,6 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
             grid.addWidget(edit, row, 2)
             grid.addWidget(plus, row, 3)
             self.edits[field] = edit
+            self._manual_widgets.extend((minus, edit, plus))
         row = len(self.pose_fields)
         grid.addWidget(QtWidgets.QLabel("\u5256\u9762\u534a\u957f (m)"), row, 0)
         self.length_edit = QtWidgets.QDoubleSpinBox()
@@ -218,12 +232,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thickness_edit.valueChanged.connect(self._set_slice_thickness)
         grid.addWidget(self.thickness_edit, row + 1, 1, 1, 3)
         actions = QtWidgets.QHBoxLayout()
-        for title, callback in (("\u91cd\u7f6e (R)", self.reset), ("\u64a4\u9500", self.undo),
-                                ("\u91cd\u505a", self.redo), ("ICP", self.icp),
-                                ("\u8ba1\u7b97\u8bef\u5dee", self.compute_error)):
+        for title, callback, mutates_pose in (("\u91cd\u7f6e (R)", self.reset, True), ("\u64a4\u9500", self.undo, True),
+                                              ("\u91cd\u505a", self.redo, True), ("ICP (V)", self.icp, True),
+                                              ("\u8ba1\u7b97\u8bef\u5dee", self.compute_error, False)):
             button = QtWidgets.QPushButton(title)
             button.clicked.connect(callback)
             actions.addWidget(button)
+            if mutates_pose:
+                self._manual_widgets.append(button)
         grid.addLayout(actions, row + 2, 0, 1, 4)
         return panel
 
@@ -256,6 +272,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_started = time.perf_counter()
         return self.controller.load_current_frame(self.data_panel.get_load_request())
 
+    def _install_navigation_shortcuts(self):
+        self._navigation_shortcuts = []
+        for sequence, amount in (("Left", -1), ("Right", 1),
+                                 ("Shift+Left", -10), ("Shift+Right", 10)):
+            shortcut = QtGui.QShortcut(QtGui.QKeySequence(sequence), self)
+            shortcut.setContext(QtCore.Qt.WindowShortcut)
+            shortcut.activated.connect(lambda step=amount: self.navigate_frames(step))
+            self._navigation_shortcuts.append(shortcut)
+
+    def navigate_frames(self, amount):
+        """Select a relative frame; review mode also loads it immediately."""
+        return self.data_panel.select_relative_frame(amount)
+
+    def _set_manual_controls_enabled(self):
+        for widget in self._manual_widgets:
+            widget.setEnabled(self.allow_manual_adjustment)
+
     def _on_frame_loaded(self, frame):
         model = self.controller.pose_model
         self.map_display = frame.global_map.roi(model.c0, self.roi_radius).voxel(self.display_voxel)
@@ -270,11 +303,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.data_panel.set_frame_loaded(True)
         self.refresh_views()
         elapsed = 0.0 if self._load_started is None else time.perf_counter() - self._load_started
+        pose_description = (
+            frame.initial_pose_path
+            if frame.initial_pose_path is not None else "<registered cloud median fallback>"
+        )
         self.statusBar().showMessage(
             "frame_id={} | map={} ({} pts) | source={} ({} pts) | pose={} | C0={} | {:.3f}s".format(
                 frame.frame_id, frame.global_map_path, len(frame.global_map.points),
                 frame.frame_cloud_path, len(frame.source_cloud.points),
-                frame.initial_pose_path, np.array2string(model.c0, precision=3), elapsed))
+                pose_description, np.array2string(model.c0, precision=3), elapsed))
 
     def refresh_views(self):
         if self.controller.current_frame is None:
@@ -302,7 +339,10 @@ class MainWindow(QtWidgets.QMainWindow):
             edit.setValue(getattr(model.delta, name))
             edit.blockSignals(False)
         quality_lines = []
+        displayed_quality = {"initial_icp", "icp_error", "manual_error"}
         for key, value in self.controller.quality.items():
+            if key not in displayed_quality:
+                continue
             if isinstance(value, dict):
                 quality_lines.append("{}:".format(key))
                 for metric, metric_value in value.items():
@@ -322,14 +362,14 @@ class MainWindow(QtWidgets.QMainWindow):
         return self.translation_large_step if large else self.translation_step
 
     def nudge(self, field, sign):
-        if self.controller.pose_model is None:
+        if not self.allow_manual_adjustment or self.controller.pose_model is None:
             return
         self.controller.pose_model.adjust(field, float(sign) * self._step_for(field))
         self.controller.invalidate_quality()
         self.refresh_views()
 
     def set_field(self, field, value):
-        if self.controller.pose_model is None:
+        if not self.allow_manual_adjustment or self.controller.pose_model is None:
             return
         values = dict(self.controller.pose_model.delta.__dict__)
         values[field] = float(value)
@@ -346,23 +386,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.refresh_views()
 
     def reset(self):
-        if self.controller.pose_model is not None:
+        if self.allow_manual_adjustment and self.controller.pose_model is not None:
             self.controller.pose_model.reset()
             self.controller.invalidate_quality()
             self.refresh_views()
 
     def undo(self):
-        if self.controller.pose_model is not None and self.controller.pose_model.undo():
+        if self.allow_manual_adjustment and self.controller.pose_model is not None and self.controller.pose_model.undo():
             self.controller.invalidate_quality()
             self.refresh_views()
 
     def redo(self):
-        if self.controller.pose_model is not None and self.controller.pose_model.redo():
+        if self.allow_manual_adjustment and self.controller.pose_model is not None and self.controller.pose_model.redo():
             self.controller.invalidate_quality()
             self.refresh_views()
 
     def icp(self):
-        if self.controller.current_frame is None:
+        if not self.allow_manual_adjustment or self.controller.current_frame is None:
             return
         try:
             icp_stats = constrained_icp(
@@ -403,6 +443,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._message_sink("warning", str(exc))
 
     def export_current_frame(self):
+        if self.mode != "register":
+            return None
         if self.controller.current_frame is None:
             self._message_sink("error", "\u8bf7\u5148\u52a0\u8f7d\u6709\u6548\u5e27")
             return None
@@ -461,6 +503,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if key == "C":
             self.compute_error()
+            return
+        if key == "V":
+            self.icp()
+            return
+        if key == "L":
+            self.load_current_frame()
             return
         super().keyPressEvent(event)
 
