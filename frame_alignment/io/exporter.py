@@ -2,6 +2,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from scipy.spatial.transform import Rotation
 import uuid
 
 import numpy as np
@@ -132,6 +133,9 @@ def export_result(request, state, cloud_writer=None, overwrite=False):
 
     initial_pose = np.asarray(frame.initial_pose, dtype=np.float64)
     delta = state.manual_delta
+    corrected_pose = np.asarray(state.corrected_pose, dtype=np.float64)
+    local_delta = np.linalg.inv(initial_pose) @ corrected_pose
+    yaw_l, pitch_l, roll_l = Rotation.from_matrix(local_delta[:3, :3]).as_euler("ZYX", degrees=True)
     payload = {
         "frame_id": frame_stem,
         "input": {
@@ -153,6 +157,13 @@ def export_result(request, state, cloud_writer=None, overwrite=False):
         },
         "T_manual_map": np.asarray(state.manual_transform, dtype=np.float64).tolist(),
         "corrected_T_map_lidar": np.asarray(state.corrected_pose, dtype=np.float64).tolist(),
+        "manual_delta_lidar": {
+            "coordinate_frame": "lidar",
+            "direction": "original_to_corrected",
+            "dx_m": float(local_delta[0, 3]), "dy_m": float(local_delta[1, 3]),
+            "dz_m": float(local_delta[2, 3]),
+            "roll_deg": float(roll_l), "pitch_deg": float(pitch_l), "yaw_deg": float(yaw_l),
+        },
         "quality": state.quality or {},
         "output": {
             "adjusted_pcd_written": written_pcd_path is not None,

@@ -90,12 +90,12 @@ class DataIOPanel(QtWidgets.QGroupBox):
         navigation.addWidget(self.next_button)
         navigation.addWidget(self.scan_button)
         form.addLayout(navigation, frame_row + 1, 0, 1, 3)
+        annotation = QtWidgets.QHBoxLayout()
+        annotation.addWidget(self.annotation_status_label)
+        annotation.addWidget(self.annotation_count_label)
+        annotation.addStretch(1)
+        form.addLayout(annotation, frame_row + 2, 0, 1, 3)
         if self.mode == "register":
-            annotation = QtWidgets.QHBoxLayout()
-            annotation.addWidget(self.annotation_status_label)
-            annotation.addWidget(self.annotation_count_label)
-            annotation.addStretch(1)
-            form.addLayout(annotation, frame_row + 2, 0, 1, 3)
             form.addWidget(self.export_pcd_check, frame_row + 3, 0, 1, 2)
             form.addWidget(self.export_button, frame_row + 3, 2)
 
@@ -152,9 +152,14 @@ class DataIOPanel(QtWidgets.QGroupBox):
         if frame_id in self.catalog.frame_ids:
             position = self.catalog.frame_ids.index(frame_id) + 1
         status = "已标注" if is_annotated else "未标注"
-        self.annotation_status_label.setText("{} {}/{}".format(status, position, self.catalog.total_count))
-        self.annotation_count_label.setText("标注量：{}/{}".format(
-            self.catalog.annotated_count, self.catalog.total_count))
+        if self.mode == "review":
+            self.annotation_status_label.setText("当前位置：{}/{}".format(
+                position, self.catalog.total_count))
+            self.annotation_count_label.clear()
+        else:
+            self.annotation_status_label.setText("{} {}/{}".format(status, position, self.catalog.total_count))
+            self.annotation_count_label.setText("标注量：{}/{}".format(
+                self.catalog.annotated_count, self.catalog.total_count))
     def _select_previous_frame(self):
         self.select_relative_frame(-1)
 

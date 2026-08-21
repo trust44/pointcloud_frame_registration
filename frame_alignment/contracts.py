@@ -87,7 +87,11 @@ class ReviewLoadRequest:
         registered_pose_file = None
         pose_directory = str(self.registered_pose_path).strip() if self.registered_pose_path is not None else ""
         if pose_directory:
-            candidate = Path(pose_directory).expanduser().resolve() / (frame_id + ".yaml")
+            pose_path = Path(pose_directory).expanduser().resolve()
+            candidate = (
+                pose_path if pose_path.is_file()
+                else pose_path / (frame_id + ".yaml")
+            )
             if candidate.is_file():
                 registered_pose_file = candidate
         return ResolvedReviewFramePaths(

@@ -31,6 +31,7 @@ def test_review_panel_uses_review_paths_and_auto_loads_navigation(tmp_path):
         "registered_pose_path": str(pose_dir),
         "frame_id": "2",
     })
+    assert panel.annotation_status_label.text() == "当前位置：1/2"
     loads = []
     panel.load_requested.connect(lambda: loads.append(panel.frame_combo.currentText()))
 

@@ -39,6 +39,12 @@ unavailable, or lacks this frame's YAML, the coordinate-wise median of the
 registered cloud (XY and Z) is used as the centre with identity orientation.
 Review mode has no adjustment or export action.
 
+In review mode, the matrix panel can load an optional registration-summary
+JSONL. The ground-truth values are read from the same registered-pose YAML
+directory configured above. It then shows the current frame's corrected/ground-truth
+DOF values (`tx`, `ty`, `tz`, `yaw`, `pitch`, `roll`) and corrected-vs-identity
+statistics.
+
 ## Profiles and navigation
 
 Both modes start with a 2x3 grid: fixed XZ/YZ views; editable XZ/YZ parallel
