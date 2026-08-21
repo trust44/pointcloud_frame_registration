@@ -30,6 +30,7 @@ _CONFIG_PATH_KEYS = (
     "initial_pose_path",
     "registered_cloud_path",
     "registered_pose_path",
+    "registration_summary_path",
     "output_path_yaml",
     "output_path_pcd",
 )
