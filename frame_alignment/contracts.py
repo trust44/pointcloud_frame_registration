@@ -60,6 +60,41 @@ class LoadRequest:
 
 
 @dataclass(frozen=True)
+class ResolvedReviewFramePaths:
+    """Resolved files for a read-only, already-registered frame."""
+
+    frame_id: str
+    global_map_file: Path
+    registered_cloud_file: Path
+    registered_pose_file: object = None
+
+
+@dataclass(frozen=True)
+class ReviewLoadRequest:
+    """Request one map-coordinate PCD plus its exported alignment YAML."""
+
+    global_map_path: object
+    registered_cloud_path: object
+    registered_pose_path: object
+    frame_id: str
+
+    def resolve_existing_paths(self):
+        frame_id = normalize_frame_id(self.frame_id)
+        global_map_file = _required_file(self.global_map_path, "Global map file")
+        cloud_dir = _required_directory(self.registered_cloud_path, "Registered cloud directory")
+        registered_cloud_file = _required_file(
+            cloud_dir / (frame_id + ".pcd"), "Registered cloud file")
+        registered_pose_file = None
+        pose_directory = str(self.registered_pose_path).strip() if self.registered_pose_path is not None else ""
+        if pose_directory:
+            candidate = Path(pose_directory).expanduser().resolve() / (frame_id + ".yaml")
+            if candidate.is_file():
+                registered_pose_file = candidate
+        return ResolvedReviewFramePaths(
+            frame_id, global_map_file, registered_cloud_file, registered_pose_file)
+
+
+@dataclass(frozen=True)
 class ExportRequest:
     yaml_output_dir: object
     write_adjusted_pcd: bool = False

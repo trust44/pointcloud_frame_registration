@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6 import QtCore, QtWidgets
 
 from ..app.frame_catalog import FrameCatalog
-from ..contracts import ExportRequest, LoadRequest, normalize_frame_id
+from ..contracts import ExportRequest, LoadRequest, ReviewLoadRequest, normalize_frame_id
 
 
 class DataIOPanel(QtWidgets.QGroupBox):
@@ -12,8 +12,13 @@ class DataIOPanel(QtWidgets.QGroupBox):
     export_requested = QtCore.Signal()
     scan_failed = QtCore.Signal(str)
 
-    def __init__(self, parent=None):
-        super().__init__("\u6570\u636e\u4e0e\u8f93\u51fa", parent)
+    def __init__(self, mode="register", parent=None):
+        if mode not in {"register", "review"}:
+            raise ValueError("mode must be 'register' or 'review'")
+        self.mode = mode
+        self.auto_load_on_navigation = mode == "review"
+        title = "\u6570\u636e\u4e0e\u8f93\u51fa" if mode == "register" else "\u5ba1\u6838\u6570\u636e"
+        super().__init__(title, parent)
         self._frame_loaded = False
         self.global_map_edit = QtWidgets.QLineEdit()
         self.frame_dir_edit = QtWidgets.QLineEdit()
@@ -56,13 +61,20 @@ class DataIOPanel(QtWidgets.QGroupBox):
         outer.addWidget(self.content_widget)
         form = QtWidgets.QGridLayout(self.content_widget)
         form.setContentsMargins(0, 0, 0, 0)
-        rows = (
-            ("\u5168\u5c40\u5730\u56fe\u6587\u4ef6", self.global_map_edit, self._browse_global_file),
-            ("\u5355\u5e27\u70b9\u4e91\u76ee\u5f55", self.frame_dir_edit, self._browse_frame_directory),
-            ("\u521d\u59cb\u4f4d\u59ff\u76ee\u5f55", self.pose_dir_edit, lambda: self._browse_directory(self.pose_dir_edit)),
-            ("YAML \u8f93\u51fa\u76ee\u5f55", self.yaml_dir_edit, lambda: self._browse_directory(self.yaml_dir_edit)),
-            ("PCD \u8f93\u51fa\u76ee\u5f55", self.pcd_dir_edit, lambda: self._browse_directory(self.pcd_dir_edit)),
-        )
+        if self.mode == "review":
+            rows = (
+                ("\u5168\u5c40\u5730\u56fe\u6587\u4ef6", self.global_map_edit, self._browse_global_file),
+                ("\u5df2\u914d\u51c6\u70b9\u4e91\u76ee\u5f55", self.frame_dir_edit, self._browse_frame_directory),
+                ("\u914d\u51c6\u4f4d\u59ff YAML \u76ee\u5f55", self.pose_dir_edit, lambda: self._browse_directory(self.pose_dir_edit)),
+            )
+        else:
+            rows = (
+                ("\u5168\u5c40\u5730\u56fe\u6587\u4ef6", self.global_map_edit, self._browse_global_file),
+                ("\u5355\u5e27\u70b9\u4e91\u76ee\u5f55", self.frame_dir_edit, self._browse_frame_directory),
+                ("\u521d\u59cb\u4f4d\u59ff\u76ee\u5f55", self.pose_dir_edit, lambda: self._browse_directory(self.pose_dir_edit)),
+                ("YAML \u8f93\u51fa\u76ee\u5f55", self.yaml_dir_edit, lambda: self._browse_directory(self.yaml_dir_edit)),
+                ("PCD \u8f93\u51fa\u76ee\u5f55", self.pcd_dir_edit, lambda: self._browse_directory(self.pcd_dir_edit)),
+            )
         for row, (label, edit, browse) in enumerate(rows):
             form.addWidget(QtWidgets.QLabel(label), row, 0)
             form.addWidget(edit, row, 1)
@@ -78,13 +90,14 @@ class DataIOPanel(QtWidgets.QGroupBox):
         navigation.addWidget(self.next_button)
         navigation.addWidget(self.scan_button)
         form.addLayout(navigation, frame_row + 1, 0, 1, 3)
-        annotation = QtWidgets.QHBoxLayout()
-        annotation.addWidget(self.annotation_status_label)
-        annotation.addWidget(self.annotation_count_label)
-        annotation.addStretch(1)
-        form.addLayout(annotation, frame_row + 2, 0, 1, 3)
-        form.addWidget(self.export_pcd_check, frame_row + 3, 0, 1, 2)
-        form.addWidget(self.export_button, frame_row + 3, 2)
+        if self.mode == "register":
+            annotation = QtWidgets.QHBoxLayout()
+            annotation.addWidget(self.annotation_status_label)
+            annotation.addWidget(self.annotation_count_label)
+            annotation.addStretch(1)
+            form.addLayout(annotation, frame_row + 2, 0, 1, 3)
+            form.addWidget(self.export_pcd_check, frame_row + 3, 0, 1, 2)
+            form.addWidget(self.export_button, frame_row + 3, 2)
 
     def _set_expanded(self, checked):
         self.content_widget.setVisible(bool(checked))
@@ -143,14 +156,19 @@ class DataIOPanel(QtWidgets.QGroupBox):
         self.annotation_count_label.setText("标注量：{}/{}".format(
             self.catalog.annotated_count, self.catalog.total_count))
     def _select_previous_frame(self):
-        frame_id = self.catalog.previous(self.frame_combo.currentText())
-        if frame_id is not None:
-            self.frame_combo.setCurrentText(frame_id)
+        self.select_relative_frame(-1)
 
     def _select_next_frame(self):
-        frame_id = self.catalog.next(self.frame_combo.currentText())
+        self.select_relative_frame(1)
+
+    def select_relative_frame(self, amount):
+        frame_id = self.catalog.offset(self.frame_combo.currentText(), amount)
         if frame_id is not None:
             self.frame_combo.setCurrentText(frame_id)
+            if self.auto_load_on_navigation:
+                self.load_requested.emit()
+            return True
+        return False
 
     def _on_pcd_toggled(self, checked):
         self.pcd_dir_edit.setEnabled(bool(checked))
@@ -171,6 +189,13 @@ class DataIOPanel(QtWidgets.QGroupBox):
         self._refresh_export_enabled()
 
     def get_load_request(self):
+        if self.mode == "review":
+            return ReviewLoadRequest(
+                Path(self.global_map_edit.text().strip()),
+                Path(self.frame_dir_edit.text().strip()),
+                self.pose_dir_edit.text().strip(),
+                self.frame_id_edit.text().strip(),
+            )
         return LoadRequest(
             Path(self.global_map_edit.text().strip()),
             Path(self.frame_dir_edit.text().strip()),
@@ -189,8 +214,12 @@ class DataIOPanel(QtWidgets.QGroupBox):
 
     def apply_config(self, config):
         self.global_map_edit.setText(str(config.get("global_map_path", "")))
-        self.frame_dir_edit.setText(str(config.get("frame_cloud_map_path", "")))
-        self.pose_dir_edit.setText(str(config.get("initial_pose_path", "")))
+        if self.mode == "review":
+            self.frame_dir_edit.setText(str(config.get("registered_cloud_path", "")))
+            self.pose_dir_edit.setText(str(config.get("registered_pose_path", "")))
+        else:
+            self.frame_dir_edit.setText(str(config.get("frame_cloud_map_path", "")))
+            self.pose_dir_edit.setText(str(config.get("initial_pose_path", "")))
         self.frame_id_edit.setText(str(config.get("frame_id", "")))
         self.yaml_dir_edit.setText(str(config.get("output_path_yaml", "")))
         self.pcd_dir_edit.setText(str(config.get("output_path_pcd", "")))

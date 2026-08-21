@@ -1,5 +1,6 @@
 # Paths may be absolute or relative to this YAML file.
 # Create output_path_yaml (and output_path_pcd when enabled) before exporting.
+mode: register  # register | review
 global_map_path: ./data/global_map.pcd
 frame_cloud_map_path: ./data/frames
 initial_pose_path: ./data/poses
@@ -26,6 +27,8 @@ display:
       color: "#F6C445"
       cmap: plasma
 interaction:
+  # Register mode only. Set true to enable 6DoF controls and ICP.
+  allow_manual_adjustment: true
   translation_step_m: 0.01
   translation_large_step_m: 0.10
   rotation_step_deg: 0.02

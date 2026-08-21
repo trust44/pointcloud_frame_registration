@@ -16,8 +16,8 @@ class DynamicProfileGeometryTests(unittest.TestCase):
             [
                 ("xz", 0, 0, 0.0),
                 ("yz", 1, 0, 90.0),
-                ("diag_plus", 0, 1, 45.0),
-                ("diag_minus", 1, 1, -45.0),
+                ("xz_offset", 0, 1, 0.0),
+                ("yz_offset", 1, 1, 90.0),
             ],
         )
         self.assertEqual([item.editable for item in defaults], [False, False, True, True])
@@ -25,12 +25,12 @@ class DynamicProfileGeometryTests(unittest.TestCase):
         self.assertEqual(
             [(extra_profile_spec(slot).grid_row, extra_profile_spec(slot).grid_column,
               extra_profile_spec(slot).angle_deg) for slot in (0, 1)],
-            [(0, 2, 90.0), (1, 2, -90.0)],
+            [(0, 2, 30.0), (1, 2, -60.0)],
         )
         self.assertTrue(all(extra_profile_spec(slot).deletable for slot in (0, 1)))
 
     def test_xz_geometry_follows_corrected_yaw_and_keeps_map_z(self):
-        from frame_alignment.core.profiles import default_profile_specs, profile_geometry
+        from frame_alignment.core.profiles import extra_profile_spec, profile_geometry
 
         rotation = Rotation.from_euler("ZYX", (30.0, 20.0, 15.0), degrees=True).as_matrix()
 
@@ -44,13 +44,13 @@ class DynamicProfileGeometryTests(unittest.TestCase):
         np.testing.assert_array_equal(geometry.height_axis, (0.0, 0.0, 1.0))
 
     def test_profile_angle_is_relative_to_corrected_lidar_heading(self):
-        from frame_alignment.core.profiles import default_profile_specs, profile_geometry
+        from frame_alignment.core.profiles import extra_profile_spec, profile_geometry
 
         rotation = Rotation.from_euler("z", 30.0, degrees=True).as_matrix()
 
-        geometry = profile_geometry(default_profile_specs()[2], np.zeros(3), rotation)
+        geometry = profile_geometry(extra_profile_spec(0), np.zeros(3), rotation)
 
-        angle = np.deg2rad(75.0)
+        angle = np.deg2rad(60.0)
         np.testing.assert_allclose(
             geometry.along_axis, (np.cos(angle), np.sin(angle), 0.0), atol=1e-12)
 
@@ -92,7 +92,7 @@ class DynamicProfileGeometryTests(unittest.TestCase):
         from frame_alignment.core.profiles import default_profile_specs, extra_profile_spec, profile_geometry
 
         with self.assertRaises(ValueError):
-            profile_geometry(replace(default_profile_specs()[2], angle_deg=181.0), np.zeros(3), np.eye(3))
+            profile_geometry(replace(extra_profile_spec(0), angle_deg=181.0), np.zeros(3), np.eye(3))
         with self.assertRaises(ValueError):
             extra_profile_spec(2)
 

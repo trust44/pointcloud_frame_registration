@@ -18,6 +18,8 @@ def test_scan_naturally_sorts_top_level_pcd_files(tmp_path):
     assert catalog.previous("2") == "2"
     assert catalog.next("2") == "10"
     assert catalog.next("frame10") == "frame10"
+    assert catalog.offset("2", 10) == "frame10"
+    assert catalog.offset("frame10", -10) == "2"
 
 
 def test_annotations_only_match_scanned_ids(tmp_path):
