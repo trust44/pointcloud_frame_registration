@@ -1,5 +1,6 @@
 ﻿"""Single-window GUI integrating data selection, 3D scene, profiles, and 6DoF controls."""
 import time
+from pathlib import Path
 
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -12,6 +13,11 @@ from ..core.profiles import extract_slice, profile_geometry
 from ..core.registration import constrained_icp, matching_error
 from ..io.exporter import AlignmentExportState, export_result
 from ..io.frame_loader import FrameLoader, ReviewFrameLoader
+from ..io.registration_summary import (
+    format_registration_report,
+    read_gt_yaml,
+    read_summary_jsonl,
+)
 from .data_io_panel import DataIOPanel
 from .profile_controls import ProfileControls
 from .profile_view import ProfileView
@@ -35,9 +41,9 @@ class MainWindow(QtWidgets.QMainWindow):
         ("dx_m", "\u0394X map (m)", "A", "D"),
         ("dy_m", "\u0394Y map (m)", "W", "S"),
         ("dz_m", "\u0394Z map (m)", "Q", "E"),
-        ("roll_deg", "\u6a2a\u6eda map (\u00b0)", "7", "9"),
-        ("pitch_deg", "\u4fef\u4ef0 map (\u00b0)", "4", "6"),
-        ("yaw_deg", "\u504f\u822a map (\u00b0)", "1", "3"),
+        ("roll_deg", "\u6a2a\u6eda map (\u00b0)", "9", "7"),
+        ("pitch_deg", "\u4fef\u4ef0 map (\u00b0)", "6", "4"),
+        ("yaw_deg", "\u504f\u822a map (\u00b0)", "3", "1"),
     )
 
     def __init__(self, config=None, loader=None, scene=None, profile_factory=ProfileView,
@@ -68,6 +74,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.error_threshold = float(error.get("match_threshold_m", 0.2))
         self._message_sink = message_sink or self._qt_message
         self._load_started = None
+        self.registration_summary_records = {}
+        self.registration_gt = None
         self.map_display = None
         self.source_display = None
         self.edits = {}
@@ -88,12 +96,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.profiles = [self._profile_widgets[spec.profile_id] for spec in self.profile_specs]
         self._build_ui()
         self.data_panel.scan_failed.connect(self._on_scan_failed)
-        self.data_panel.apply_config(self.config)
         self.data_panel.load_requested.connect(self.load_current_frame)
         self.data_panel.export_requested.connect(self.export_current_frame)
         default_loader = ReviewFrameLoader(read_cloud) if self.mode == "review" else FrameLoader(read_cloud)
         self.controller = AlignmentController(
             loader or default_loader, PoseModel, self._on_frame_loaded, self._on_load_error)
+        self.data_panel.apply_config(self.config)
+        self._apply_registration_config()
         self.profile_controls.profiles_changed.connect(self._apply_profile_specs)
         self.cloud_render_controls.changed.connect(self._on_cloud_render_changed)
         self._install_navigation_shortcuts()
@@ -246,11 +255,87 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_matrix_panel(self):
         panel = QtWidgets.QGroupBox("矩阵")
         layout = QtWidgets.QVBoxLayout(panel)
+        if self.mode == "review":
+            form = QtWidgets.QFormLayout()
+            self.registration_summary_edit = QtWidgets.QLineEdit()
+            self.registration_summary_edit.setPlaceholderText("配准统计 JSONL（可选）")
+            summary_button = QtWidgets.QPushButton("选择")
+            summary_button.clicked.connect(self._browse_registration_summary)
+            summary_row = QtWidgets.QHBoxLayout()
+            summary_row.addWidget(self.registration_summary_edit)
+            summary_row.addWidget(summary_button)
+            summary_widget = QtWidgets.QWidget()
+            summary_widget.setLayout(summary_row)
+            form.addRow("配准统计", summary_widget)
+            layout.addLayout(form)
         self.matrix_text = QtWidgets.QPlainTextEdit()
         self.matrix_text.setReadOnly(True)
+        matrix_font = QtGui.QFont("Consolas", 9)
+        matrix_font.setStyleHint(QtGui.QFont.Monospace)
+        self.matrix_text.setFont(matrix_font)
         self.matrix_text.setMinimumHeight(300)
         layout.addWidget(self.matrix_text)
         return panel
+
+    def _apply_registration_config(self):
+        if self.mode != "review":
+            return
+        self.registration_summary_edit.setText(str(self.config.get("registration_summary_path", "")))
+        self._load_registration_summary(show_error=False)
+        self._load_registration_gt(show_error=False)
+
+    def _browse_registration_summary(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "选择配准统计 JSONL", self.registration_summary_edit.text(),
+            "JSON Lines (*.jsonl *.json);;All files (*.*)")
+        if path:
+            self.registration_summary_edit.setText(path)
+            self._load_registration_summary()
+            self.refresh_views()
+
+    def _load_registration_summary(self, show_error=True):
+        value = self.registration_summary_edit.text().strip()
+        if not value:
+            self.registration_summary_records = {}
+            return False
+        try:
+            self.registration_summary_records = read_summary_jsonl(value)
+            return True
+        except Exception as exc:
+            self.registration_summary_records = {}
+            if show_error:
+                self._message_sink("warning", str(exc))
+            return False
+
+    def _load_registration_gt(self, show_error=True):
+        value = self.data_panel.pose_dir_edit.text().strip()
+        if not value:
+            self.registration_gt = None
+            return False
+        try:
+            gt_path = value
+            candidate_dir = Path(value).expanduser()
+            if candidate_dir.is_dir():
+                if self.controller.current_frame is None:
+                    self.registration_gt = None
+                    return False
+                gt_path = candidate_dir / (self.controller.current_frame.frame_id + ".yaml")
+            self.registration_gt = read_gt_yaml(gt_path)
+            return self.registration_gt is not None
+        except Exception as exc:
+            self.registration_gt = None
+            if show_error:
+                self._message_sink("warning", str(exc))
+            return False
+
+    def _registration_report(self):
+        if self.mode != "review":
+            return "配准模式不显示外部配准统计"
+        frame = self.controller.current_frame
+        if frame is None:
+            return "未加载当前帧"
+        return format_registration_report(
+            self.registration_summary_records.get(frame.frame_id), self.registration_gt)
     def _qt_message(self, level, text):
         methods = {"error": QtWidgets.QMessageBox.critical,
                    "warning": QtWidgets.QMessageBox.warning,
@@ -301,6 +386,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.scene.focus_on(model.c0, self.roi_radius)
         self.data_panel.frame_id_edit.setText(frame.frame_id)
         self.data_panel.set_frame_loaded(True)
+        if self.mode == "review":
+            self._load_registration_gt(show_error=False)
         self.refresh_views()
         elapsed = 0.0 if self._load_started is None else time.perf_counter() - self._load_started
         pose_description = (
@@ -338,23 +425,26 @@ class MainWindow(QtWidgets.QMainWindow):
             edit.blockSignals(True)
             edit.setValue(getattr(model.delta, name))
             edit.blockSignals(False)
-        quality_lines = []
-        displayed_quality = {"initial_icp", "icp_error", "manual_error"}
-        for key, value in self.controller.quality.items():
-            if key not in displayed_quality:
-                continue
-            if isinstance(value, dict):
-                quality_lines.append("{}:".format(key))
-                for metric, metric_value in value.items():
-                    shown = "{:.6f}".format(float(metric_value)) if isinstance(metric_value, (int, float)) else metric_value
-                    quality_lines.append("  {}: {}".format(metric, shown))
-            else:
-                quality_lines.append("{}: {}".format(key, value))
-        self.matrix_text.setPlainText(
-            "C0 = {}\nC_current = {}\nquality:\n{}\nT_manual_map =\n{}\nT_corrected_map_lidar =\n{}".format(
-                np.array2string(model.c0, precision=4), np.array2string(model.current_origin, precision=4),
-                "\n".join(quality_lines), np.array2string(model.transform, precision=6),
-                np.array2string(model.corrected_pose, precision=6)))
+        if self.mode == "review":
+            self.matrix_text.setPlainText(self._registration_report())
+        else:
+            quality_lines = []
+            displayed_quality = {"initial_icp", "icp_error", "manual_error"}
+            for key, value in self.controller.quality.items():
+                if key not in displayed_quality:
+                    continue
+                if isinstance(value, dict):
+                    quality_lines.append("{}:".format(key))
+                    for metric, metric_value in value.items():
+                        shown = "{:.6f}".format(float(metric_value)) if isinstance(metric_value, (int, float)) else metric_value
+                        quality_lines.append("  {}: {}".format(metric, shown))
+                else:
+                    quality_lines.append("{}: {}".format(key, value))
+            self.matrix_text.setPlainText(
+                "C0 = {}\nC_current = {}\nquality:\n{}\nT_manual_map =\n{}\nT_corrected_map_lidar =\n{}".format(
+                    np.array2string(model.c0, precision=4), np.array2string(model.current_origin, precision=4),
+                    "\n".join(quality_lines), np.array2string(model.transform, precision=6),
+                    np.array2string(model.corrected_pose, precision=6)))
     def _step_for(self, field):
         large = bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ShiftModifier)
         if field.endswith("deg"):
