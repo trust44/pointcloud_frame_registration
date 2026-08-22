@@ -64,6 +64,7 @@ output_path_pcd: ./alignment_output/pcd
 interaction:
   allow_manual_adjustment: true
 ```
+![配准模式界面](./images/register_snapshoot.png)
 
 ### 审核模式配置
 
@@ -77,6 +78,8 @@ frame_id: "1001"
 ```
 
 审核模式只读：不允许人工调整、ICP 或导出。
+
+![审核模式界面](./images/review_snapshoot.png)
 
 ### 兼容单文件命令行
 
