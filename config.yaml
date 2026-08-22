@@ -1,6 +1,6 @@
 # Paths may be absolute or relative to this YAML file.
 # Create output_path_yaml (and output_path_pcd when enabled) before exporting.
-mode: review  # register | review
+mode: register  # register | review
 global_map_path: D:/1_data/map_seg/global_map/jinhua/colored_map_global_voxel_blue_filled.pcd
 registered_cloud_path: D:/1_data/map_seg/global_map/jinhua/corrected_velodyne_map
 registered_pose_path: D:/1_data/map_seg/global_map/jinhua/gt_manual/yaml

@@ -64,6 +64,7 @@ output_path_pcd: ./alignment_output/pcd
 interaction:
   allow_manual_adjustment: true
 ```
+![配准模式界面](./images/register_snapshoot.png)
 
 ### 审核模式配置
 
@@ -77,6 +78,8 @@ frame_id: "1001"
 ```
 
 审核模式只读：不允许人工调整、ICP 或导出。
+
+![审核模式界面](./images/review_snapshoot.png)
 
 ### 兼容单文件命令行
 
@@ -131,4 +134,4 @@ $env:QT_QPA_PLATFORM='offscreen'
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-`pytest` 不在 `requirements.txt`，需要另行安装。GUI 需要 Windows 桌面 OpenGL；Docker、WSL/Linux 和 LAZ 解压 backend 的正式支持范围未声明。
+`pytest` 不在 `requirements.txt`，需要另行安装。GUI 需要 Windows 桌面 OpenGL。
