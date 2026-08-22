@@ -134,4 +134,4 @@ $env:QT_QPA_PLATFORM='offscreen'
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-`pytest` 不在 `requirements.txt`，需要另行安装。GUI 需要 Windows 桌面 OpenGL；Docker、WSL/Linux 和 LAZ 解压 backend 的正式支持范围未声明。
+`pytest` 不在 `requirements.txt`，需要另行安装。GUI 需要 Windows 桌面 OpenGL。
